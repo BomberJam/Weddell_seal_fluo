@@ -1,0 +1,410 @@
+---
+title: "00_fluo_test"
+output:
+  html_document:
+    df_print: paged
+date: "2025-04-10"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Packages
+```{r packages}
+library(ncdf4) 
+library(raster) 
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(data.table)
+library(oce)
+```
+
+## Variables
+```{r variables}
+MAX_CHLA_DEPTH <- 200       # define depth at which to consider dark signal (CHLA "absolute zero")
+SURFACE_NOT_NAN <- 4
+DDU_STATION_LAT <- -66.663253
+DDU_STATION_LON <- 140.002335
+DDU_LAT_LIM = c(-70, -65)
+DDU_LON_LIM = c(135, 150)
+```
+
+## Paths
+```{r paths}
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/fluo_claude"
+DATA_FOLDER <- "oceanographic_data"
+BATHY_FOLDER <- "bathy"
+DEPLOY_FOLDER <- "wd11"
+SEAL_NAME <- "wd11-687-18"
+SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
+
+BATHY_PATH <- file.path(ROOT_PROJ, BATHY_FOLDER)
+NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+
+```
+
+## NetCfd code
+```{r nc-code}
+nc_data <- nc_open(NC_PATH)
+# print(nc_data)
+lon <- ncvar_get(nc_data, "LONGITUDE")
+lat <- ncvar_get(nc_data, "LATITUDE")
+chla <- ncvar_get(nc_data, "CHLA")
+light <- ncvar_get(nc_data, "LIGHT")
+temp <- ncvar_get(nc_data, "TEMP_ADJUSTED")
+psal <- ncvar_get(nc_data,"PSAL_ADJUSTED")
+pres <- ncvar_get(nc_data, "PRES")
+juld <- ncvar_get(nc_data, "JULD")
+```
+
+## Long Lat Light
+```{r dataframe}
+max_depth_dataset <- 150
+m = 1:max_depth_dataset
+n = 5
+
+origin_date <- as.Date("1950-01-01 00:00:00")
+dateTime <- origin_date + juld
+
+df_profiles <- data.frame(
+  lon,
+  lat,
+  chla[m,n],
+  light[m,n],
+  temp[m,n],
+  psal[m,n]
+)
+```
+
+```{r variables}
+# diag <- read.csv("diag_2017-2024_forclaude_07apr24.csv", stringsAsFactors = FALSE)
+# diag$date <- as.POSIXct(diag$date, format="%Y-%m-%d %H:%M")
+# # trier par id , puis par date
+# diag <- diag %>% arrange(id,date)
+# # extraire l'individu qui nous intéresse
+# df_wd11 <- diag %>% filter(id == SEAL_NAME)
+# 
+# cols <- c("lat", "lon")
+# interp_results <- lapply(cols, function(col) {
+#   approx(x = t1, y = df_wd11[[col]], xout = t2, rule = 2)$y
+# })
+# 
+# names(interp_results) <- paste0(cols, "_corr")
+# df_interp <- as.data.frame(interp_results)
+# 
+# df_interp$time <- dateTime
+
+
+# Interpolation approx
+# t1 <- as.numeric(df_wd11$date )
+# t2 <- as.numeric(dateTime)
+# 
+# lat_corr <- approx(x = t1, y = df_wd11$lat, xout = t2, rule = 2)$y
+# lon_corr <- approx(x = t1, y = df_wd11$lon, xout = t2, rule = 2)$y
+# 
+# df_profiles$lat_corr <- lat_corr
+# df_profiles$lon_corr <- lon_corr
+
+```
+
+
+```{r}
+
+# df_wd11$date <- as_date(df_wd11$date)
+# setDT(df_temp)
+# setDT(df_wd11)
+# 
+# a<- setkey(df_wd11, date)
+# b<-setkey(df_temp, date)
+# 
+# df_corrected <- df_wd11[df_temp, roll = "nearest"] # cette ligne pose soucis 
+# 
+# df_corrected[, `:=`(lat = i.lat, lon = i.lon)]
+# cols_to_remove <- c("i.lon","i.lat")
+# df_corrected <- df_corrected[, (cols_to_remove) := NULL]
+
+#df = df_corrected
+```
+
+```{r NaColumns}
+col_na_only <- apply(light, 2, function(col) all(is.na(col)))
+nb_colonnes_na <- sum(col_na_only)
+which(col_na_only)
+
+cat("Number of only N/A columns :", nb_colonnes_na, "\n\n")
+```
+
+```{r NaColumns}
+light_subset <- light[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_preprocess1_nonNan2 : erasing NaN profiles
+lat_subset <- lat[!col_na_only]
+lon_subset <- lon[!col_na_only]
+date_subset <- dateTime[!col_na_only]
+
+total_light <- colSums(light_subset, na.rm = TRUE)
+profil_names <- as.character(seq_along(total_light))
+
+plot(
+  total_light,
+  type = "b",                     
+  pch = 18,                        
+  col = "blue",
+  xlab = "Profil n°",
+  ylab = "Total lumière (µmol/m²/s)",
+  main = paste0("Lumière totale par profile : ", SEAL_NAME, " (en rouge les colonnes N/A)"),
+  xaxt = "n"                       
+)
+
+axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
+```
+
+```{r DarkValue}
+
+last_nonzero_vals <- sapply(1:ncol(light_subset), function(n) {
+  idx <- which(!is.na(light_subset[, n]) & light_subset[, n] != 0)
+  if (length(idx) > 0) {
+    light_subset[max(idx), n]
+  }
+})
+
+light_corrected <- sweep(light_subset, 2, last_nonzero_vals, FUN = "-") # dark-value ? Not sure mhmhmhm
+
+# Plot only one of the 150
+plot(light_subset[1:MAX_CHLA_DEPTH, n], pres[1:MAX_CHLA_DEPTH, n], type = "l", col = "blue",
+     ylim = rev(range(pres[1:200, n], na.rm = TRUE)),
+     xlim = c(-10,15),
+     xlab = "Light", ylab = "Depth", main = paste("Profil", n, " dark value : ", last_nonzero_vals[n]))
+
+lines(light_corrected[1:MAX_CHLA_DEPTH, n], pres[1:MAX_CHLA_DEPTH, n], col = "red")
+
+legend("bottomright", legend = c("Original", "Corrected"),
+       col = c("blue", "red"), lty = 1, bty = "n")
+```
+
+```{r}
+matplot(light[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
+        type = "l",
+        ylim = rev(c(0, MAX_CHLA_DEPTH)),
+        lty = 1,
+        xlab = "Light (µmol/m²/s)",
+        ylab = "Depth (m)",
+        main = paste0("Light profiles : ", SEAL_NAME))
+grid()
+
+matplot(light_corrected, pres[1:MAX_CHLA_DEPTH,],
+        type = "l",
+        ylim = rev(c(0, MAX_CHLA_DEPTH)),
+        lty = 1,
+        xlab = "Light (µmol/m²/s)",
+        ylab = "Depth (m)",
+        main = paste0("Light profiles corrected : ", SEAL_NAME))
+grid()
+
+light <- light_corrected
+```
+
+```{r dataframe}
+
+light_surface <- light[SURFACE_NOT_NAN, ]
+light_20m <- light[20, ]
+light_40m <- light[40, ]
+
+df_light_surface <- data.frame(
+  lon = lon_subset,
+  lat = lat_subset,
+  light_surf = light_surface,
+  light_20 = light_20m,
+  light_40 = light_40m
+)
+
+df_surface_clean <- df_light_surface %>% filter(!is.na(light_surf))
+df_20m_clean <- df_light_surface %>% filter(!is.na(light_20))
+df_40m_clean <- df_light_surface %>% filter(!is.na(light_40))
+
+n_profiles_surf <- length(df_surface_clean$light_surf)
+n_profiles_20 <- length(df_20m_clean$light_20)
+n_profiles_40 <- length(df_40m_clean$light_40)
+
+ggplot(df_surface_clean, aes(x = lon, y = lat, color = light_surf)) +
+  geom_point(size = 2) +
+  scale_color_viridis_c() +
+  labs(
+    title = paste0(n_profiles_surf," light profiles (", SURFACE_NOT_NAN,"m deep)"),
+    x = "Longitude",
+    y = "Latitude",
+    color = "Light\nln(µmol/m²/s)"
+  ) +
+  theme_minimal()
+
+ggplot(df_20m_clean, aes(x = lon, y = lat, color = light_20)) +
+  geom_point(size = 2) +
+  scale_color_viridis_c() +
+  labs(
+    title = paste0(n_profiles_20," light profiles (", 20,"m deep)"),
+    x = "Longitude",
+    y = "Latitude",
+    color = "Light\nln(µmol/m²/s)"
+  ) +
+  theme_minimal()
+
+ggplot(df_40m_clean, aes(x = lon, y = lat, color = light_40)) +
+  geom_point(size = 2) +
+  scale_color_viridis_c() +
+  labs(
+    title = paste0(n_profiles_40, " light profiles (", 40,"m deep)"),
+    x = "Longitude",
+    y = "Latitude",
+    color = "Light\nln(µmol/m²/s)"
+  ) +
+  theme_minimal()
+```
+
+```{r LightThroughTime}
+solar_angle = sunAngle(date_subset, lon_subset, lat_subset)$altitude
+
+df_solar <- data.frame(
+  solar_angle,
+  l = light[SURFACE_NOT_NAN,]
+)
+
+df_solar <- df_solar %>%
+  mutate(period = case_when(
+    solar_angle > 0 ~ "Day",
+    solar_angle <= 0 & solar_angle > -8 ~ "Twilight",
+    solar_angle <= -8 ~ "Night"
+  ))
+
+nPeriod = df_solar %>%  count(period)
+
+ggplot(df_solar, aes(x = date_subset, y = solar_angle, color = period)) +
+  geom_line() +
+  labs(title = "Solar Angle",
+       x = "Date", y = "Solar Angle (°)") +
+  scale_color_manual(values = c("Day" = "gold", "Twilight" = "orange", "Night" = "navy")) +
+  theme_minimal()
+
+ggplot(df_solar, aes(x = date_subset, y = l, color = period)) +
+  geom_line() +
+  labs(title = paste0("Light (",SURFACE_NOT_NAN, "m deep)"),
+       x = "Date", y = "ln(µmol/m²/sec)") +
+  scale_color_manual(values = c("Day" = "gold", "Twilight" = "orange", "Night" = "navy")) +
+  theme_minimal()
+
+cat("Number of Day values :", nPeriod$n[1], "\n")
+cat("Number of Night values :", nPeriod$n[2], "\n")
+cat("Number of Twilight values :", nPeriod$n[3], "\n")
+```
+
+```{r SaveLightProfiles, echo=FALSE}
+dir_light = "profils_light"
+dir.create(dir_light, showWarnings = FALSE)
+
+nlight = ncol(light)
+
+for (i in 1:nlight) 
+{
+  filename <- paste0("profils_light/profil_light", i, ".png")
+  
+  png(filename, width = 800, height = 600)
+  
+  plot(light[, i], pres[m,i],
+       type = "l",
+       xlim = c(-10,10),
+       ylim = rev(c(0, MAX_CHLA_DEPTH)),
+       xlab = "Light (µmol/m²/s)",
+       ylab = "Press",
+       main = paste("Profil light - Col ", i))
+  grid()
+  
+  # Fermer le fichier png
+  dev.off()
+}
+cat(nlight, "profiles generated in",dir_light,"\n\n")
+```
+
+```{r PlotOneProfile}
+# Layout pour 3 graphiques côte à côte
+par(mfrow = c(1, 4))
+
+# Plot 1: Lumière
+plot(light[m,n], pres[m,n],
+     type = "l",
+     xlim = range(light[,n], na.rm = TRUE),
+     ylim = rev(c(0, max_depth_dataset)),
+     xlab = "Light (µmol/m²/s)",
+     ylab = "Depth (m)")
+grid()
+
+# Plot 2: Température
+plot(temp[m,n], pres[m,n],
+     type = "l",
+     xlab = "Temperature (°C)",
+     xlim = range(temp[,n], na.rm = TRUE),
+     ylim = rev(c(0, max_depth_dataset)),
+     ylab = "")
+grid()
+
+# Plot 3: Salinité
+plot(psal[m,n], pres[m,n],
+     type = "l",
+     xlab = "Salinity",
+     xlim = range(psal[,n], na.rm = TRUE),
+     ylim = rev(c(0, max_depth_dataset)),
+     ylab = "")
+grid()
+
+# Plot 4: Chla
+plot(chla[m,n], pres[m,n],
+     type = "l",
+     xlab = "CHLA (fluo)",
+     xlim = c(-10, 10),
+     ylim = rev(c(0, max_depth_dataset)),
+     ylab = "")
+grid()
+
+mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light)), side = 3, line = -2, outer = TRUE)
+
+```
+
+## Light and ice
+```{r}
+library(terra)
+library(raster)
+
+prj="+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+amsr2 <-raster("amsr2/2019/asi-AMSR2-s3125-20190205-v5.4.tif")
+
+amsr2[amsr2 > 100] <- NA
+
+lon_min <- 138
+lon_max <- 141
+lat_min <- -67
+lat_max <- -66.5
+
+box_lonlat <- rbind(
+  c(lon_min, lat_min),
+  c(lon_min, lat_max),
+  c(lon_max, lat_max),
+  c(lon_max, lat_min),
+  c(lon_min, lat_min)
+)
+box_proj <- project(box_lonlat, to = prj, from = "EPSG:4326")
+plot(amsr2)
+lines(box_proj, col = "red", lwd = 1)
+```
+
+```{r}
+
+latlon_box <- extent(c(lon_min, lon_max, lat_min, lat_max))
+latlon_raster <- raster(latlon_box, crs = CRS("+proj=longlat +datum=WGS84"))
+
+projected_extent <- extent(projectExtent(latlon_raster, projection(amsr2))) #crs(amsr2)
+
+cropped_raster <- crop(amsr2, projected_extent)
+projected_raster <- projectRaster(cropped_raster, crs = CRS("+init=epsg:4326"))
+plot(projected_raster)
+points(df$lon, df$lat, pch = 4, col = "black", cex = 1)
+
+```
+
+
