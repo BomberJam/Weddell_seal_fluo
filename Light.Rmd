@@ -18,30 +18,43 @@ library(dplyr)
 library(lubridate)
 library(data.table)
 library(oce)
+library(terra)
+
 ```
 
 ## Variables
 ```{r variables}
 MAX_CHLA_DEPTH <- 200       # define depth at which to consider dark signal (CHLA "absolute zero")
 SURFACE_NOT_NAN <- 4
-DDU_STATION_LAT <- -66.663253
-DDU_STATION_LON <- 140.002335
-DDU_LAT_LIM = c(-70, -65)
-DDU_LON_LIM = c(135, 150)
+
+DDU_loc=NULL
+DDU_loc$lat = -66.663253
+DDU_loc$lon = 140.002335
+DDU_loc=as.data.frame(DDU_loc)
+
+# DDU_LAT_LIM = c(-70, -65)
+# DDU_LON_LIM = c(135, 150)
 ```
 
 ## Paths
 ```{r paths}
-ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/fluo_claude"
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+
 DATA_FOLDER <- "oceanographic_data"
-BATHY_FOLDER <- "bathy"
 DEPLOY_FOLDER <- "wd11"
 SEAL_NAME <- "wd11-687-18"
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
-
-BATHY_PATH <- file.path(ROOT_PROJ, BATHY_FOLDER)
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 
+BATHY_FOLDER <- "bathy"
+FINE_TOPO_FILE <- "w001001.adf"
+LARGE_TOPO_FILE <- "gebco_2023_n-50.0_s-79.0_w90.0_e180.0.tif"
+BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
+BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
+
+FAST_ICE_FOLDER <- "fast_ice"
+FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
+FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
 ```
 
 ## NetCfd code
@@ -77,7 +90,7 @@ df_profiles <- data.frame(
 )
 ```
 
-```{r variables}
+```{r corrected lon lat}
 # diag <- read.csv("diag_2017-2024_forclaude_07apr24.csv", stringsAsFactors = FALSE)
 # diag$date <- as.POSIXct(diag$date, format="%Y-%m-%d %H:%M")
 # # trier par id , puis par date
@@ -106,10 +119,6 @@ df_profiles <- data.frame(
 # df_profiles$lat_corr <- lat_corr
 # df_profiles$lon_corr <- lon_corr
 
-```
-
-
-```{r}
 
 # df_wd11$date <- as_date(df_wd11$date)
 # setDT(df_temp)
@@ -125,6 +134,7 @@ df_profiles <- data.frame(
 # df_corrected <- df_corrected[, (cols_to_remove) := NULL]
 
 #df = df_corrected
+
 ```
 
 ```{r NaColumns}
@@ -367,6 +377,45 @@ mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light)), side = 3, line = -2, outer 
 ```
 
 ## Light and ice
+```{r}
+prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+ex <- c(-2691055, 2933945, -2390156, 2309844)
+
+fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
+set.ext(fast_ice_raster, ext(ex))
+set.crs(fast_ice_raster, crs(prj))
+#plot(fast_ice_raster[[1]])
+
+lon_min <- 138
+lon_max <- 141
+lat_min <- -67
+lat_max <- -66.5
+
+points <- cbind(
+  lon = c(lon_min, lon_max),  # Example longitudes
+  lat = c(lat_min,lat_max)   # Example latitudes
+)
+
+prjpoints <- project(points, to = prj, from = "EPSG:4326")
+new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
+new_r=crop(fast_ice_raster,new_ex)
+#plot(new_r)
+
+time_index <- seq(3,15, by = 1) #
+x_sub <- subset(new_r, time_index)
+#plot(x_sub)
+n=length(time_index)
+
+# Next step 
+# fine_topo <- raster(BATHY_PATH_FINE) 
+# fine_topo[fine_topo >=0] <-NA
+# fine_topo_spat <- terra::rast(fine_topo)
+# 
+# large_topo <- raster(BATHY_PATH_LARGE)
+# large_topo[large_topo >=0] <-NA
+# large_topo_spat <- terra::rast(large_topo)
+```
+
 ```{r}
 library(terra)
 library(raster)
