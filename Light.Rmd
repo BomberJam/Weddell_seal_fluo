@@ -32,7 +32,7 @@ DDU_LON_LIM = c(135, 150)
 
 ## Paths
 ```{r paths}
-ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/fluo_claude"
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 DATA_FOLDER <- "oceanographic_data"
 BATHY_FOLDER <- "bathy"
 DEPLOY_FOLDER <- "wd11"
