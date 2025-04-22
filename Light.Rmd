@@ -91,12 +91,42 @@ df_profiles <- data.frame(
 ```
 
 ```{r corrected lon lat}
+diag <- read.csv("diag_2017-2024_forclaude_07apr24.csv", stringsAsFactors = FALSE)
+diag$date <- as.POSIXct(diag$date, format="%Y-%m-%d %H:%M")
+
+# extraire l'individu qui nous intéresse et trier par date
+df_wd11 <- diag %>% filter(id == SEAL_NAME)
+df_wd11 <- df_wd11 %>% arrange(date)
+
+t1 <- as.numeric(df_wd11$date )
+t2 <- as.numeric(as.POSIXct(dateTime))
+# t2 <- as.numeric(dateTime)
+
+cols <- c("lat", "lon")
+interp_results <- lapply(cols, function(col) {
+  approx(x = t1, y = df_wd11[[col]], xout = t2, rule = 2)$y
+})
+
+names(interp_results) <- paste0(cols, "_corr")
+df_interp <- as.data.frame(interp_results)
+
+df_interp$time <- dateTime
+
+# lon <- df_interp$lon_corr
+# lat <- df_interp$lat_corr
+
 # diag <- read.csv("diag_2017-2024_forclaude_07apr24.csv", stringsAsFactors = FALSE)
 # diag$date <- as.POSIXct(diag$date, format="%Y-%m-%d %H:%M")
-# # trier par id , puis par date
-# diag <- diag %>% arrange(id,date)
-# # extraire l'individu qui nous intéresse
+# 
+# date_seq <- seq(from = as.POSIXct(min(dateTime), origin = "1970-01-01"),
+#                 to   = as.POSIXct(max(dateTime) + 1, origin = "1970-01-01") - 3600,
+#                 by = "hour")
+# 
 # df_wd11 <- diag %>% filter(id == SEAL_NAME)
+# df_wd11 <- df_wd11 %>% arrange(date)
+# 
+# t1 <- as.numeric(df_wd11$date)
+# t2 <- as.numeric(date_seq)
 # 
 # cols <- c("lat", "lon")
 # interp_results <- lapply(cols, function(col) {
@@ -105,35 +135,7 @@ df_profiles <- data.frame(
 # 
 # names(interp_results) <- paste0(cols, "_corr")
 # df_interp <- as.data.frame(interp_results)
-# 
-# df_interp$time <- dateTime
-
-
-# Interpolation approx
-# t1 <- as.numeric(df_wd11$date )
-# t2 <- as.numeric(dateTime)
-# 
-# lat_corr <- approx(x = t1, y = df_wd11$lat, xout = t2, rule = 2)$y
-# lon_corr <- approx(x = t1, y = df_wd11$lon, xout = t2, rule = 2)$y
-# 
-# df_profiles$lat_corr <- lat_corr
-# df_profiles$lon_corr <- lon_corr
-
-
-# df_wd11$date <- as_date(df_wd11$date)
-# setDT(df_temp)
-# setDT(df_wd11)
-# 
-# a<- setkey(df_wd11, date)
-# b<-setkey(df_temp, date)
-# 
-# df_corrected <- df_wd11[df_temp, roll = "nearest"] # cette ligne pose soucis 
-# 
-# df_corrected[, `:=`(lat = i.lat, lon = i.lon)]
-# cols_to_remove <- c("i.lon","i.lat")
-# df_corrected <- df_corrected[, (cols_to_remove) := NULL]
-
-#df = df_corrected
+# df_interp$time <- date_seq
 
 ```
 
@@ -235,6 +237,25 @@ n_profiles_surf <- length(df_surface_clean$light_surf)
 n_profiles_20 <- length(df_20m_clean$light_20)
 n_profiles_40 <- length(df_40m_clean$light_40)
 
+ggplot() +
+  geom_point(data = df_surface_clean, 
+             aes(x = lon, y = lat, color = "Original"), 
+             alpha = 0.4, size = 2) +
+  geom_point(data = df_interp, 
+             aes(x = lon_corr, y = lat_corr, color = "Interpolated"), 
+             alpha = 0.4, size = 2) +
+  scale_color_manual(
+    name = "Data Type",
+    values = c("Original" = "blue", "Interpolated" = "red")
+  ) +
+  labs(
+    title = paste0(n_profiles_surf, " light profiles (", SURFACE_NOT_NAN, "m deep) + interpolated positions"),
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+
+
 ggplot(df_surface_clean, aes(x = lon, y = lat, color = light_surf)) +
   geom_point(size = 2) +
   scale_color_viridis_c() +
@@ -280,8 +301,8 @@ df_solar <- data.frame(
 df_solar <- df_solar %>%
   mutate(period = case_when(
     solar_angle > 0 ~ "Day",
-    solar_angle <= 0 & solar_angle > -8 ~ "Twilight",
-    solar_angle <= -8 ~ "Night"
+    solar_angle <= 0 & solar_angle > -12 ~ "Twilight",
+    solar_angle <= -12 ~ "Night"
   ))
 
 nPeriod = df_solar %>%  count(period)
@@ -384,75 +405,79 @@ ex <- c(-2691055, 2933945, -2390156, 2309844)
 fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
 set.ext(fast_ice_raster, ext(ex))
 set.crs(fast_ice_raster, crs(prj))
-#plot(fast_ice_raster[[1]])
+plot(fast_ice_raster[[1]], legend = FALSE) # le continent
 
-lon_min <- 138
-lon_max <- 141
+lon_min <- 136
+lon_max <- 143
 lat_min <- -67
 lat_max <- -66.5
 
 points <- cbind(
-  lon = c(lon_min, lon_max),  # Example longitudes
-  lat = c(lat_min,lat_max)   # Example latitudes
+  lon = c(lon_min, lon_max),  
+  lat = c(lat_min,lat_max)
 )
 
 prjpoints <- project(points, to = prj, from = "EPSG:4326")
 new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
 new_r=crop(fast_ice_raster,new_ex)
-#plot(new_r)
+plot(new_r, legend = FALSE) # le crop
 
-time_index <- seq(3,15, by = 1) #
+# Once per month between feb and august
+time_index <- seq(3,15, by = 1) 
 x_sub <- subset(new_r, time_index)
-#plot(x_sub)
+plot(x_sub, legend = FALSE)
+
 n=length(time_index)
 
-# Next step 
-# fine_topo <- raster(BATHY_PATH_FINE) 
-# fine_topo[fine_topo >=0] <-NA
-# fine_topo_spat <- terra::rast(fine_topo)
+```
+
+```{r}
+fine_topo <- raster(BATHY_PATH_FINE) 
+fine_topo[fine_topo >=0] <-NA
+fine_topo_spat <- terra::rast(fine_topo)
+
+large_topo <- raster(BATHY_PATH_LARGE)
+large_topo[large_topo >=0] <-NA
+large_topo_spat <- terra::rast(large_topo)
+```
+
+```{r}
+# library(terra)
+# library(raster)
 # 
-# large_topo <- raster(BATHY_PATH_LARGE)
-# large_topo[large_topo >=0] <-NA
-# large_topo_spat <- terra::rast(large_topo)
-```
-
-```{r}
-library(terra)
-library(raster)
-
-prj="+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
-amsr2 <-raster("amsr2/2019/asi-AMSR2-s3125-20190205-v5.4.tif")
-
-amsr2[amsr2 > 100] <- NA
-
-lon_min <- 138
-lon_max <- 141
-lat_min <- -67
-lat_max <- -66.5
-
-box_lonlat <- rbind(
-  c(lon_min, lat_min),
-  c(lon_min, lat_max),
-  c(lon_max, lat_max),
-  c(lon_max, lat_min),
-  c(lon_min, lat_min)
-)
-box_proj <- project(box_lonlat, to = prj, from = "EPSG:4326")
-plot(amsr2)
-lines(box_proj, col = "red", lwd = 1)
+# prj="+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+# amsr2 <-raster("amsr2/2019/asi-AMSR2-s3125-20190205-v5.4.tif")
+# 
+# amsr2[amsr2 > 100] <- NA
+# 
+# lon_min <- 138
+# lon_max <- 141
+# lat_min <- -67
+# lat_max <- -66.5
+# 
+# box_lonlat <- rbind(
+#   c(lon_min, lat_min),
+#   c(lon_min, lat_max),
+#   c(lon_max, lat_max),
+#   c(lon_max, lat_min),
+#   c(lon_min, lat_min)
+# )
+# box_proj <- project(box_lonlat, to = prj, from = "EPSG:4326")
+# plot(amsr2)
+# lines(box_proj, col = "red", lwd = 1)
 ```
 
 ```{r}
 
-latlon_box <- extent(c(lon_min, lon_max, lat_min, lat_max))
-latlon_raster <- raster(latlon_box, crs = CRS("+proj=longlat +datum=WGS84"))
-
-projected_extent <- extent(projectExtent(latlon_raster, projection(amsr2))) #crs(amsr2)
-
-cropped_raster <- crop(amsr2, projected_extent)
-projected_raster <- projectRaster(cropped_raster, crs = CRS("+init=epsg:4326"))
-plot(projected_raster)
-points(df$lon, df$lat, pch = 4, col = "black", cex = 1)
+# latlon_box <- extent(c(lon_min, lon_max, lat_min, lat_max))
+# latlon_raster <- raster(latlon_box, crs = CRS("+proj=longlat +datum=WGS84"))
+# 
+# projected_extent <- extent(projectExtent(latlon_raster, projection(amsr2))) #crs(amsr2)
+# 
+# cropped_raster <- crop(amsr2, projected_extent)
+# projected_raster <- projectRaster(cropped_raster, crs = CRS("+init=epsg:4326"))
+# plot(projected_raster)
+# points(df$lon, df$lat, pch = 4, col = "black", cex = 1)
 
 ```
 
