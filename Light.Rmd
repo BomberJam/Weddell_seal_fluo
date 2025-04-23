@@ -19,6 +19,8 @@ library(lubridate)
 library(data.table)
 library(oce)
 library(terra)
+library(tidyterra)
+library(cmocean)
 
 ```
 
@@ -114,19 +116,18 @@ ggplot() +
     values = c("Original" = "blue", "Interpolated" = "red")
   ) +
   labs(
-    title = paste0(
-      n_profiles_surf, " profils lumière (", 
-      SURFACE_NOT_NAN[1], " à ", SURFACE_NOT_NAN[length(SURFACE_NOT_NAN)], 
-      " m de profondeur) + positions interpolées"
+    title = paste0(SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[length(SURFACE_NOT_NAN)], 
+      " m deep"
     ),
     x = "Longitude",
     y = "Latitude"
   ) +
   theme_minimal()
+```
 
+```{r}
 lon <- df_interp$lon_corr
 lat <- df_interp$lat_corr
-
 ```
 
 ```{r NaColumns}
@@ -291,6 +292,8 @@ cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypiq
 # Layout pour 3 graphiques côte à côte
 par(mfrow = c(1, 4))
 
+n = 114
+
 # Plot 1: Lumière
 plot(light[m,n], pres[m,n],
      type = "l",
@@ -330,7 +333,6 @@ grid()
 mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light)), side = 3, line = -2, outer = TRUE)
 
 ```
-
 
 ```{r dataframe}
 
@@ -409,22 +411,78 @@ df_solar <- df_solar %>%
 nPeriod = df_solar %>%  count(period)
 
 ggplot(df_solar, aes(x = date_subset, y = solar_angle, color = period)) +
-  geom_line() +
+  geom_point() +
   labs(title = "Solar Angle",
        x = "Date", y = "Solar Angle (°)") +
-  scale_color_manual(values = c("Day" = "gold", "Twilight" = "green", "Night" = "navy")) +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
 
 ggplot(df_solar, aes(x = date_subset, y = l, color = period)) +
   geom_point() +
-  labs(title = paste0("Light (",SURFACE_NOT_NAN, "m deep)"),
+  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7], "m deep)"),
        x = "Date", y = "ln(µmol/m²/sec)") +
-  scale_color_manual(values = c("Day" = "gold", "Twilight" = "green", "Night" = "navy")) +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
 
 cat("Number of Day values :", nPeriod$n[1], "\n")
 cat("Number of Night values :", nPeriod$n[2], "\n")
 cat("Number of Twilight values :", nPeriod$n[3], "\n")
+```
+```{r}
+df_solar$lon <- lon_subset
+df_solar$lat <- lat_subset
+
+lon_median <-  mean(lon_subset, na.rm = TRUE) # 139.9
+lat_median <-  mean(lat_subset, na.rm = TRUE) # -66.625
+
+df_solar <- df_solar %>%
+  mutate(zone = case_when(
+    lon <= lon_median & lat >= lat_median ~ "Nord-Ouest",
+    lon > lon_median & lat >= lat_median ~ "Nord-Est",
+    lon <= lon_median & lat < lat_median ~ "Sud-Ouest",
+    lon > lon_median & lat < lat_median ~ "Sud-Est"
+  ))
+
+ggplot(df_solar, aes(x = date_subset, y = l, color = period, shape = zone)) +
+  geom_point() +
+  labs(title = "Lumière en fonction de la période et de la zone",
+       x = "Date", y = "ln(µmol/m²/sec)") +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
+  theme_minimal()
+
+ggplot(df_solar, aes(x = lon, y = lat, color = zone, shape = period)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(title = "Zones (couleur) et période jour/nuit/crépuscule (forme)",
+       x = "Longitude", y = "Latitude") +
+  scale_color_manual(values = c("Nord-Ouest" = "darkorange",
+                                "Nord-Est" = "purple",
+                                "Sud-Ouest" = "blue",
+                                "Sud-Est" = "darkgreen")) +
+  scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
+  theme_minimal()
+
+```
+```{r}
+df_solar <- df_solar %>%
+  mutate(distance_to_center = sqrt((lon - lon_median)^2 + (lat - lat_median)^2))
+
+df_solar <- df_solar %>%
+  mutate(distance_group = case_when(
+    distance_to_center < 0.05 ~ "Centre",
+    distance_to_center < 0.15 ~ "Périphérie proche",
+    TRUE ~ "Périphérie lointaine"
+  ))
+
+ggplot(df_solar, aes(x = lon, y = lat, color = distance_group, shape = period)) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(title = "",
+       x = "Longitude", y = "Latitude") +
+  scale_color_manual(values = c("Centre" = "firebrick",
+                                "Périphérie proche" = "goldenrod",
+                                "Périphérie lointaine" = "steelblue")) +
+  scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
+  theme_minimal()
+
 ```
 
 ```{r extract Suspicious solar profiles}
@@ -443,7 +501,7 @@ plot(light[m,global_max_index], pres[m,global_max_index],
      type = "l",
      xlim = range(light[,global_max_index], na.rm = TRUE),
      ylim = rev(c(0, max_depth_dataset)),
-     xlab = "Light (µmol/m²/s)",
+     xlab = "Light ln(µmol/m²/s)",
      ylab = "Depth (m)")
 grid()
 
@@ -457,12 +515,12 @@ ex <- c(-2691055, 2933945, -2390156, 2309844)
 fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
 set.ext(fast_ice_raster, ext(ex))
 set.crs(fast_ice_raster, crs(prj))
-plot(fast_ice_raster[[1]], legend = FALSE) # le continent
+#plot(fast_ice_raster[[1]], legend = FALSE) # le continent
 
-lon_min <- 136
-lon_max <- 143
-lat_min <- -67
-lat_max <- -66.5
+lon_min <- 130
+lon_max <- 160
+lat_min <- -66.5
+lat_max <- -63
 
 points <- cbind(
   lon = c(lon_min, lon_max),  
@@ -472,15 +530,10 @@ points <- cbind(
 prjpoints <- project(points, to = prj, from = "EPSG:4326")
 new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
 new_r=crop(fast_ice_raster,new_ex)
-plot(new_r, legend = FALSE) # le crop
-
-# Once per month between feb and august
-time_index <- seq(3,15, by = 1) 
+# From feb to may
+time_index <- seq(1,4, by = 1) 
 x_sub <- subset(new_r, time_index)
 plot(x_sub, legend = FALSE)
-
-n=length(time_index)
-
 ```
 
 ```{r}
@@ -494,29 +547,46 @@ large_topo_spat <- terra::rast(large_topo)
 ```
 
 ```{r}
-# library(terra)
-# library(raster)
-# 
-# prj="+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
-# amsr2 <-raster("amsr2/2019/asi-AMSR2-s3125-20190205-v5.4.tif")
-# 
-# amsr2[amsr2 > 100] <- NA
-# 
-# lon_min <- 138
-# lon_max <- 141
-# lat_min <- -67
-# lat_max <- -66.5
-# 
-# box_lonlat <- rbind(
-#   c(lon_min, lat_min),
-#   c(lon_min, lat_max),
-#   c(lon_max, lat_max),
-#   c(lon_max, lat_min),
-#   c(lon_min, lat_min)
-# )
-# box_proj <- project(box_lonlat, to = prj, from = "EPSG:4326")
-# plot(amsr2)
-# lines(box_proj, col = "red", lwd = 1)
+fine_topo_spat <- crop(fine_topo_spat, extent(139.5, 141.5, -67, -66.4))
+large_topo_spat <- crop(large_topo_spat, extent(139.5, 141.5, -67, -66.4))
+
+x_sub2= project(x_sub, crs(large_topo_spat), 
+                res = res(large_topo_spat)) 
+
+# Create a sequence of months between the first and last month
+start <- format(as.Date("2019-02-05"), "%m")
+end <- format(as.Date("2019-05-06"), "%m")
+
+months_seq <- seq(from = start, to = end)
+
+# Extract the month names from the sequence
+month_names <- paste0("2019 - ", month.name[months_seq])
+
+names(x_sub2) <- month_names
+plot(x_sub2, legend = FALSE)
+x_sub2 <- crop(x_sub2, extent(139.5, 141.5, -67, -66.4))
+plot(x_sub2, legend = FALSE)
+```
+
+```{r}
+#description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
+# x_sub2[x_sub2 == 0 | x_sub2 == 3 | x_sub2 == 5| x_sub2 == 6] <- NA
+
+glacier=x_sub2[[1]]
+# glacier=round(glacier)
+
+ggplot() +
+  geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6)+ #bathy
+  geom_spatraster_contour_text(data = fine_topo_spat, binwidth=300)+
+  geom_spatraster(data = glacier, alpha = 0.6) + #glace
+  geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6)+
+  scale_fill_cmocean(name = "deep", direction = -1, alpha = 0.5, guide = guide_legend(title = "Type"))+
+  geom_point(data = df_surface_clean, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) + 
+  scale_x_continuous(breaks = c(140, 141)) +
+  scale_y_continuous(breaks = c(-66.4, -66.8))+
+  xlab("Longitude") + ylab("Latitude")+
+  theme_minimal()
+
 ```
 
 ```{r}
@@ -532,5 +602,4 @@ large_topo_spat <- terra::rast(large_topo)
 # points(df$lon, df$lat, pch = 4, col = "black", cex = 1)
 
 ```
-
 
