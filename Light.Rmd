@@ -34,8 +34,6 @@ DDU_loc$lat = -66.663253
 DDU_loc$lon = 140.002335
 DDU_loc=as.data.frame(DDU_loc)
 
-# DDU_LAT_LIM = c(-70, -65)
-# DDU_LON_LIM = c(135, 150)
 ```
 
 ## Paths
@@ -57,6 +55,10 @@ BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
 FAST_ICE_FOLDER <- "fast_ice"
 FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
 FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
+
+AMSR_FOLDER <- "amsr2"
+AMSR_FILE <- "2019/asi-AMSR2-s3125-20190205-v5.4.tif"
+AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FILE)
 ```
 
 ## NetCfd code
@@ -69,7 +71,7 @@ chla <- ncvar_get(nc_data, "CHLA")
 light <- ncvar_get(nc_data, "LIGHT")
 temp <- ncvar_get(nc_data, "TEMP_ADJUSTED")
 psal <- ncvar_get(nc_data,"PSAL_ADJUSTED")
-pres <- ncvar_get(nc_data, "PRES")
+pres <- ncvar_get(nc_data, "PRES_ADJUSTED")
 juld <- ncvar_get(nc_data, "JULD")
 ```
 
@@ -81,6 +83,14 @@ n = 5
 
 origin_date <- as.Date("1950-01-01 00:00:00")
 dateTime <- origin_date + juld
+
+# Notre date est en DMY uniquement, il manque les heures
+# datetime <- ncvar_get(dat, 'JULD') * 3600 * 24 + strptime('01/01/1950', '%d/%m/%Y', tz = 'UTC'); datetime <- round(datetime); # Round to neareast minute
+# 
+# 
+# ctd_hr.all$datetime <- strptime(ctd_hr.all$datetime, '%Y-%m-%d %H:%M:%S', tz = 'UTC');
+# ctd_hr.all$Month <- as.numeric(format(ctd_hr.all$datetime, '%m'));
+# ctd_hr.all$Year <- format(ctd_hr.all$datetime, '%Y'); ## Format date as POSIXlt and add month and year
 ```
 
 ```{r corrected lon lat}
@@ -187,41 +197,6 @@ lines(light_corrected[1:MAX_CHLA_DEPTH, n], pres[1:MAX_CHLA_DEPTH, n], col = "re
 legend("bottomright", legend = c("Original", "Corrected"),
        col = c("blue", "red"), lty = 1, bty = "n")
 ```
-```{r}
-## CODE MATLAB
-
-# # Copier les données d'origine
-# L_adNonLogRegDkSa <- L_adNonLogRegDk
-# np_tot <- ncol(L_adNonLogRegDk)
-# satDepth_temp <- rep(1, np_tot)  # profondeur valide par défaut : surface
-# 
-# # Boucle sur les profils valides
-# for (ii_temp in which(idx031_lightNonNan)) {
-#   diffL_temp <- diff(L_adNonLogRegDk[, ii_temp])
-#   first_valid <- lightData$firstNonNan[ii_temp]
-#   
-#   if (diffL_temp[first_valid] < 0) {
-#     # pas de saturation détectée
-#     next
-#   } else {
-#     # chercher la profondeur où ça recommence à décroître
-#     satTestDepth_temp <- first_valid + 1
-#     while (satTestDepth_temp <= length(diffL_temp) && diffL_temp[satTestDepth_temp] >= 0) {
-#       satTestDepth_temp <- satTestDepth_temp + 1
-#     }
-#     satDepth_temp[ii_temp] <- satTestDepth_temp
-#     # remplacer les données saturées par NA
-#     L_adNonLogRegDkSa[1:(satTestDepth_temp - 1), ii_temp] <- NA
-#   }
-# }
-# 
-# # Mise à jour de lightData
-# lightData$saturationDepth <- satDepth_temp
-# 
-# # Log naturel des données corrigées
-# L_adLogRegDkSa <- log(L_adNonLogRegDkSa)
-
-```
 
 ```{r}
 matplot(light[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
@@ -292,7 +267,7 @@ cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypiq
 # Layout pour 3 graphiques côte à côte
 par(mfrow = c(1, 4))
 
-n = 114
+n = 101
 
 # Plot 1: Lumière
 plot(light[m,n], pres[m,n],
@@ -390,6 +365,54 @@ ggplot(df_40m_clean, aes(x = lon, y = lat, color = light_40)) +
     color = "Light\nln(µmol/m²/s)"
   ) +
   theme_minimal()
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+
+solar_angle = sunAngle(date_subset, lon_subset, lat_subset)$altitude
+solar_threshold <- -12
+
+# tranche de 0.1 : 10 - 0.5 : 2 - 0.05 : 20
+lat_bin <- floor(lat_subset * 20) / 20
+
+df_solar <- data.frame(
+  date = date_subset,
+  lat = lat_subset,
+  lat_bin = lat_bin,
+  lon = lon_subset,
+  solar_angle = solar_angle,
+  light = light_surf_avg
+)
+
+df_solar <- df_solar %>%
+  mutate(period = case_when(
+    solar_angle > 0 ~ "Day",
+    solar_angle <= 0 & solar_angle > solar_threshold ~ "Twilight",
+    solar_angle <= solar_threshold ~ "Night"
+  ))
+
+nPeriod_by_lat <- df_solar %>%
+  group_by(lat_bin, period) %>%
+  summarise(n = n(), .groups = "drop")
+
+ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
+  geom_point() +
+  facet_wrap(~lat_bin, scales = "free_y") +
+  labs(title = "Solar Angle by Latitude Bin",
+       x = "Date", y = "Solar Angle (°)") +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
+  theme_minimal()
+
+ggplot(df_solar, aes(x = date, y = light, color = period)) +
+  geom_point() +
+  facet_wrap(~lat_bin, scales = "free_y") +
+  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7], "m deep) by Latitude Bin"),
+       x = "Date", y = "ln(µmol/m²/sec)") +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
+  theme_minimal()
+
+
 ```
 
 ```{r LightThroughTime}
@@ -507,7 +530,29 @@ grid()
 
 ```
 
+
+
 ## Light and ice
+```{r}
+LON_MIN <- 136
+LON_MAX <- 146
+LAT_MIN <- -68
+LAT_MAX <- -65
+```
+
+```{r}
+fine_topo <- raster(BATHY_PATH_FINE)
+fine_topo[fine_topo >=0] <-NA
+fine_topo_spat <- terra::rast(fine_topo)
+
+large_topo <- raster(BATHY_PATH_LARGE)
+large_topo[large_topo >=0] <-NA
+large_topo_spat <- terra::rast(large_topo)
+
+fine_topo_spat <- crop(fine_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
+large_topo_spat <- crop(large_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
+```
+
 ```{r}
 prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
 ex <- c(-2691055, 2933945, -2390156, 2309844)
@@ -516,11 +561,6 @@ fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
 set.ext(fast_ice_raster, ext(ex))
 set.crs(fast_ice_raster, crs(prj))
 #plot(fast_ice_raster[[1]], legend = FALSE) # le continent
-
-lon_min <- 130
-lon_max <- 160
-lat_min <- -66.5
-lat_max <- -63
 
 points <- cbind(
   lon = c(lon_min, lon_max),  
@@ -537,19 +577,6 @@ plot(x_sub, legend = FALSE)
 ```
 
 ```{r}
-fine_topo <- raster(BATHY_PATH_FINE)
-fine_topo[fine_topo >=0] <-NA
-fine_topo_spat <- terra::rast(fine_topo)
-
-large_topo <- raster(BATHY_PATH_LARGE)
-large_topo[large_topo >=0] <-NA
-large_topo_spat <- terra::rast(large_topo)
-```
-
-```{r}
-fine_topo_spat <- crop(fine_topo_spat, extent(139.5, 141.5, -67, -66.4))
-large_topo_spat <- crop(large_topo_spat, extent(139.5, 141.5, -67, -66.4))
-
 x_sub2= project(x_sub, crs(large_topo_spat), 
                 res = res(large_topo_spat)) 
 
@@ -564,21 +591,45 @@ month_names <- paste0("2019 - ", month.name[months_seq])
 
 names(x_sub2) <- month_names
 plot(x_sub2, legend = FALSE)
-x_sub2 <- crop(x_sub2, extent(139.5, 141.5, -67, -66.4))
+x_sub2 <- crop(x_sub2, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
 plot(x_sub2, legend = FALSE)
+
+x_sub2=round(x_sub2)
+#description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
+x_sub2[x_sub2 == 0 | x_sub2 == 3 | x_sub2 == 5| x_sub2 == 6] <- NA
+
+glacier=x_sub2[[1]]
+```
+
+```{r AMSR2}
+wgs <- "+proj=longlat +ellps=WGS84"
+amsr_raster <- raster(AMSR_PATH)
+amsr_raster[amsr_raster > 100] <- NA_real_
+amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
+plot(amsr_raster)
+
+points <- cbind(
+  lon = c(lon_min, lon_max),  
+  lat = c(lat_min,lat_max)
+)
+
+boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
+amsr_cropped=crop(amsr_raster, boxext)
+plot(amsr_cropped)
+
+amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
+plot(amsr_raster_cropped) #this gives me a wrong map compared to what it should be.
+
+amsr_spat <- rast(amsr_raster_cropped)  # RasterLayer -> SpatRaster
 ```
 
 ```{r}
-#description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
-# x_sub2[x_sub2 == 0 | x_sub2 == 3 | x_sub2 == 5| x_sub2 == 6] <- NA
-
-glacier=x_sub2[[1]]
-# glacier=round(glacier)
 
 ggplot() +
   geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6)+ #bathy
   geom_spatraster_contour_text(data = fine_topo_spat, binwidth=300)+
   geom_spatraster(data = glacier, alpha = 0.6) + #glace
+  geom_spatraster(data = amsr_spat, alpha = 0.6) + # AMSR2
   geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6)+
   scale_fill_cmocean(name = "deep", direction = -1, alpha = 0.5, guide = guide_legend(title = "Type"))+
   geom_point(data = df_surface_clean, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) + 
@@ -586,20 +637,30 @@ ggplot() +
   scale_y_continuous(breaks = c(-66.4, -66.8))+
   xlab("Longitude") + ylab("Latitude")+
   theme_minimal()
-
 ```
 
 ```{r}
+# Boucler sur les rasters pour récup les lon lat date mois SIC en % et fast-ice (mask 1 yen a 0 yen a pas)
 
-# latlon_box <- extent(c(lon_min, lon_max, lat_min, lat_max))
-# latlon_raster <- raster(latlon_box, crs = CRS("+proj=longlat +datum=WGS84"))
+#newdata=data.frame()
+#
+# for (i in 1:nrow(dives2)){
+#   dt<-dives2[i,]  # IMPORTANT
+# #open date and hour
 # 
-# projected_extent <- extent(projectExtent(latlon_raster, projection(amsr2))) #crs(amsr2)
+#   points <- cbind(dt$lon, dt$lat)   # IMPORTANT
 # 
-# cropped_raster <- crop(amsr2, projected_extent)
-# projected_raster <- projectRaster(cropped_raster, crs = CRS("+init=epsg:4326"))
-# plot(projected_raster)
-# points(df$lon, df$lat, pch = 4, col = "black", cex = 1)
-
+#   fastice_sub <- subset(new_r, dt$index)
+#   fastice_sub[fastice_sub == 0 |fastice_sub == 1 | fastice_sub == 2 | fastice_sub == 3 | fastice_sub == 5| fastice_sub == 6] <- NA
+#   fastice_sub[fastice_sub == 4] <- 1
+# 
+# 
+#   fastice=extract(fastice_sub, (project(points, to = prj, from = "EPSG:4326")))   # IMPORTANT
+#  
+#   names(fastice)<-("fastice")
+#   dt<-cbind(dt,fastice)   # IMPORTANT
+#   newdata=rbind(newdata,dt)   # IMPORTANT
+# }
+# head(newdata)
 ```
 
