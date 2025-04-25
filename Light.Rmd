@@ -81,16 +81,8 @@ max_depth_dataset <- 150
 m = 1:max_depth_dataset
 n = 5
 
-origin_date <- as.Date("1950-01-01 00:00:00")
-dateTime <- origin_date + juld
-
-# Notre date est en DMY uniquement, il manque les heures
-# datetime <- ncvar_get(dat, 'JULD') * 3600 * 24 + strptime('01/01/1950', '%d/%m/%Y', tz = 'UTC'); datetime <- round(datetime); # Round to neareast minute
-# 
-# 
-# ctd_hr.all$datetime <- strptime(ctd_hr.all$datetime, '%Y-%m-%d %H:%M:%S', tz = 'UTC');
-# ctd_hr.all$Month <- as.numeric(format(ctd_hr.all$datetime, '%m'));
-# ctd_hr.all$Year <- format(ctd_hr.all$datetime, '%Y'); ## Format date as POSIXlt and add month and year
+dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
+dateTime <- round(dateTime, units = "mins")  # arrondi à la minute la plus proche
 ```
 
 ```{r corrected lon lat}
@@ -367,9 +359,6 @@ ggplot(df_40m_clean, aes(x = lon, y = lat, color = light_40)) +
   theme_minimal()
 ```
 ```{r}
-library(dplyr)
-library(ggplot2)
-
 solar_angle = sunAngle(date_subset, lon_subset, lat_subset)$altitude
 solar_threshold <- -12
 
@@ -416,36 +405,31 @@ ggplot(df_solar, aes(x = date, y = light, color = period)) +
 ```
 
 ```{r LightThroughTime}
-solar_angle = sunAngle(date_subset, lon_subset, lat_subset)$altitude
-solar_threshold <- -12
-
-df_solar <- data.frame(
-  solar_angle,
-  l = light_surf_avg
-)
-
-df_solar <- df_solar %>%
-  mutate(period = case_when(
-    solar_angle > 0 ~ "Day",
-    solar_angle <= 0 & solar_angle > solar_threshold ~ "Twilight",
-    solar_angle <= solar_threshold ~ "Night"
-  ))
 
 nPeriod = df_solar %>%  count(period)
 
-ggplot(df_solar, aes(x = date_subset, y = solar_angle, color = period)) +
+ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
   geom_point() +
   labs(title = "Solar Angle",
        x = "Date", y = "Solar Angle (°)") +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
 
-ggplot(df_solar, aes(x = date_subset, y = l, color = period)) +
+vline_dates <- as.POSIXct(c("2019-02-20", "2019-03-21", "2019-04-19"))
+
+ggplot(df_solar, aes(x = date, y = light, color = period)) +
   geom_point() +
-  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7], "m deep)"),
-       x = "Date", y = "ln(µmol/m²/sec)") +
+  geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
+  annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "19/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  labs(
+    title = paste0("Light (", SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[7], "m deep)"),
+    x = "Date", y = "ln(µmol/m²/sec)"
+  ) +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
+
 
 cat("Number of Day values :", nPeriod$n[1], "\n")
 cat("Number of Night values :", nPeriod$n[2], "\n")
@@ -466,8 +450,12 @@ df_solar <- df_solar %>%
     lon > lon_median & lat < lat_median ~ "Sud-Est"
   ))
 
-ggplot(df_solar, aes(x = date_subset, y = l, color = period, shape = zone)) +
+ggplot(df_solar, aes(x = date, y = light, color = period, shape = zone)) +
   geom_point() +
+  geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
+  annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "19/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
   labs(title = "Lumière en fonction de la période et de la zone",
        x = "Date", y = "ln(µmol/m²/sec)") +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
@@ -511,11 +499,11 @@ ggplot(df_solar, aes(x = lon, y = lat, color = distance_group, shape = period)) 
 ```{r extract Suspicious solar profiles}
 max_night_light <- df_solar %>%
   filter(period == "Night") %>%
-  summarise(max_light = max(l, na.rm = TRUE)) %>%
+  summarise(max_light = max(light, na.rm = TRUE)) %>%
   pull(max_light)
 
 night_rows <- which(df_solar$period == "Night")
-local_max_index <- which.max(df_solar$l[night_rows])
+local_max_index <- which.max(df_solar$light[night_rows])
 global_max_index <- night_rows[local_max_index]
 
 cat("profil index: ", global_max_index, " - Value: ", max_night_light,"\n")
@@ -530,12 +518,10 @@ grid()
 
 ```
 
-
-
 ## Light and ice
 ```{r}
-LON_MIN <- 136
-LON_MAX <- 146
+LON_MIN <- 130
+LON_MAX <- 150
 LAT_MIN <- -68
 LAT_MAX <- -65
 ```
@@ -563,8 +549,8 @@ set.crs(fast_ice_raster, crs(prj))
 #plot(fast_ice_raster[[1]], legend = FALSE) # le continent
 
 points <- cbind(
-  lon = c(lon_min, lon_max),  
-  lat = c(lat_min,lat_max)
+  lon = c(LON_MIN, LON_MAX),  
+  lat = c(LAT_MIN, LAT_MAX)
 )
 
 prjpoints <- project(points, to = prj, from = "EPSG:4326")
@@ -609,8 +595,8 @@ amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
 plot(amsr_raster)
 
 points <- cbind(
-  lon = c(lon_min, lon_max),  
-  lat = c(lat_min,lat_max)
+  lon = c(LON_MIN, LON_MAX),  
+  lat = c(LAT_MIN, LAT_MAX)
 )
 
 boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
@@ -627,14 +613,11 @@ amsr_spat <- rast(amsr_raster_cropped)  # RasterLayer -> SpatRaster
 
 ggplot() +
   geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6)+ #bathy
-  geom_spatraster_contour_text(data = fine_topo_spat, binwidth=300)+
-  geom_spatraster(data = glacier, alpha = 0.6) + #glace
-  geom_spatraster(data = amsr_spat, alpha = 0.6) + # AMSR2
   geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6)+
+  geom_spatraster(data = amsr_spat, alpha = 0.6)+ # AMSR2
+  geom_spatraster(data = glacier, alpha = 0.6)+ #glace
   scale_fill_cmocean(name = "deep", direction = -1, alpha = 0.5, guide = guide_legend(title = "Type"))+
-  geom_point(data = df_surface_clean, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) + 
-  scale_x_continuous(breaks = c(140, 141)) +
-  scale_y_continuous(breaks = c(-66.4, -66.8))+
+  geom_point(data = df_surface_clean, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1)+
   xlab("Longitude") + ylab("Latitude")+
   theme_minimal()
 ```
@@ -662,5 +645,49 @@ ggplot() +
 #   newdata=rbind(newdata,dt)   # IMPORTANT
 # }
 # head(newdata)
+```
+
+```{r SaveAndClassifyChlaProfiles}
+
+dir_standard = "profils_chla_standard"
+dir_atypique = "profils_chla_atypique"
+dir.create(dir_standard, showWarnings = FALSE)
+dir.create(dir_atypique, showWarnings = FALSE)
+
+nchla = ncol(chla)
+
+for (i in 1:nchla) {
+  profil_chla <- chla[, i]
+  profil_pres <- pres[, i]
+  
+  delta_chla <- profil_chla - profil_chla[1]
+
+  if (any(delta_chla > 0, na.rm = TRUE)) {
+    class_dir <- dir_atypique
+  } else {
+    class_dir <- dir_standard
+  }
+  
+  filename <- paste0(class_dir, "/profil_chla", i, ".png")
+  
+  png(filename, width = 800, height = 600)
+  
+  plot(profil_chla, profil_pres,
+       type = "l",
+       xlim = c(-10,10),
+       ylim = rev(c(0, MAX_CHLA_DEPTH)),
+       xlab = "chla (mg/m³)",
+       ylab = "Press",
+       main = paste("Profil chla - Col", i))
+  grid()
+  
+  dev.off()
+}
+
+cat("Classification terminée :\n")
+cat(nchla, "profils analysés\n")
+cat("->", length(list.files(dir_standard)), "profils standards dans", dir_standard, "\n")
+cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypique, "\n\n")
+
 ```
 
