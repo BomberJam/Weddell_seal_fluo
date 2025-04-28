@@ -36,6 +36,32 @@ DDU_loc=as.data.frame(DDU_loc)
 
 ```
 
+```{r}
+# ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+# DATA_FOLDER <- "oceanographic_data"
+# DEPLOY_FOLDER <- "wd31"
+# DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+# 
+# nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+# ranges_list <- list()
+# 
+# for (nc_file in nc_files) {
+#   nc_data <- nc_open(nc_file)
+#   juld <- ncvar_get(nc_data, "JULD")
+#   
+#   dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
+#   dateTime <- round(dateTime, units = "mins")
+#   
+#   ranges_list[[basename(nc_file)]] <- range(dateTime, na.rm = TRUE)
+#   nc_close(nc_data)
+# }
+# 
+# for (file_name in names(ranges_list)) {
+#   cat("\nFichier:", file_name, "\n")
+#   print(ranges_list[[file_name]])
+# }
+```
+
 ## Paths
 ```{r paths}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
@@ -57,8 +83,10 @@ FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
 FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
 
 AMSR_FOLDER <- "amsr2"
-AMSR_FILE <- "2019/asi-AMSR2-s3125-20190205-v5.4.tif"
-AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FILE)
+AMSR_FOLDER_YEAR <- "2019"
+AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
+AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
+AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 ```
 
 ## NetCfd code
@@ -160,7 +188,7 @@ plot(
   col = "blue",
   xlab = "Profil n°",
   ylab = "Total lumière (µmol/m²/s)",
-  main = paste0("Lumière totale par profile : ", SEAL_NAME, " (en rouge les colonnes N/A)"),
+  main = paste0("Lumière totale par profile : ", SEAL_NAME),
   xaxt = "n"                       
 )
 
@@ -242,7 +270,7 @@ for (i in 1:nlight) {
        ylim = rev(c(0, MAX_CHLA_DEPTH)),
        xlab = "Light (µmol/m²/s)",
        ylab = "Press",
-       main = paste("Profil light - Col", i))
+       main = paste0("Profil light - Col ", i," (", format(date_subset[i], "%Y-%m-%d"), ")"))
   grid()
   
   dev.off()
@@ -259,7 +287,7 @@ cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypiq
 # Layout pour 3 graphiques côte à côte
 par(mfrow = c(1, 4))
 
-n = 101
+n = 96
 
 # Plot 1: Lumière
 plot(light[m,n], pres[m,n],
@@ -297,14 +325,20 @@ plot(chla[m,n], pres[m,n],
      ylab = "")
 grid()
 
-mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light)), side = 3, line = -2, outer = TRUE)
+mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light), " (", format(date_subset[n], "%Y-%m-%d"), ")"), side = 3, line = -2, outer = TRUE)
 
 ```
 
 ```{r dataframe}
 
-light_surface_interval <- light[SURFACE_NOT_NAN, , drop = FALSE]
-light_surf_avg <- apply(light_surface_interval, 2, function(x) mean(x, na.rm = TRUE))
+depth_interval <- pres[SURFACE_NOT_NAN,1]
+light_interval <- light[SURFACE_NOT_NAN, ]
+
+depth_diff <- c(diff(depth_interval), 0)  
+
+light_surf_avg <- apply(light_interval, 2, function(x) {
+  sum(x * depth_diff, na.rm = TRUE) / sum(depth_diff, na.rm = TRUE)
+})
 
 light_20m <- light[20, ]
 light_40m <- light[40, ]
@@ -312,6 +346,7 @@ light_40m <- light[40, ]
 df_light_surface <- data.frame(
   lon = lon_subset,
   lat = lat_subset,
+  date = date_subset,
   light_surf = light_surf_avg,
   light_20 = light_20m,
   light_40 = light_40m
@@ -376,8 +411,8 @@ df_solar <- data.frame(
 
 df_solar <- df_solar %>%
   mutate(period = case_when(
-    solar_angle > 0 ~ "Day",
-    solar_angle <= 0 & solar_angle > solar_threshold ~ "Twilight",
+    solar_angle >= 0 ~ "Day",
+    solar_angle < 0 & solar_angle > solar_threshold ~ "Twilight",
     solar_angle <= solar_threshold ~ "Night"
   ))
 
@@ -408,6 +443,10 @@ ggplot(df_solar, aes(x = date, y = light, color = period)) +
 
 nPeriod = df_solar %>%  count(period)
 
+cat("Number of Day values :", nPeriod$n[1], "\n")
+cat("Number of Night values :", nPeriod$n[2], "\n")
+cat("Number of Twilight values :", nPeriod$n[3], "\n")
+
 ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
   geom_point() +
   labs(title = "Solar Angle",
@@ -415,12 +454,12 @@ ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
 
-vline_dates <- as.POSIXct(c("2019-02-20", "2019-03-21", "2019-04-19"))
+vline_dates <- as.POSIXct(c("2019-02-20 01:12:00", "2019-03-21 00:46:00", "2019-04-19 07:30:00"))
 
 ggplot(df_solar, aes(x = date, y = light, color = period)) +
   geom_point() +
   geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
-  annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "19/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "20/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
   annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
   annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
   labs(
@@ -429,37 +468,21 @@ ggplot(df_solar, aes(x = date, y = light, color = period)) +
   ) +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
-
-
-cat("Number of Day values :", nPeriod$n[1], "\n")
-cat("Number of Night values :", nPeriod$n[2], "\n")
-cat("Number of Twilight values :", nPeriod$n[3], "\n")
 ```
 ```{r}
 df_solar$lon <- lon_subset
 df_solar$lat <- lat_subset
 
-lon_median <-  mean(lon_subset, na.rm = TRUE) # 139.9
-lat_median <-  mean(lat_subset, na.rm = TRUE) # -66.625
+lon_center <-  DDU_loc$lon 
+lat_center <-  DDU_loc$lat
 
 df_solar <- df_solar %>%
   mutate(zone = case_when(
-    lon <= lon_median & lat >= lat_median ~ "Nord-Ouest",
-    lon > lon_median & lat >= lat_median ~ "Nord-Est",
-    lon <= lon_median & lat < lat_median ~ "Sud-Ouest",
-    lon > lon_median & lat < lat_median ~ "Sud-Est"
+    lon <= lon_center & lat >= lat_center ~ "Nord-Ouest",
+    lon > lon_center & lat >= lat_center ~ "Nord-Est",
+    lon <= lon_center & lat < lat_center ~ "Sud-Ouest",
+    lon > lon_center & lat < lat_center ~ "Sud-Est"
   ))
-
-ggplot(df_solar, aes(x = date, y = light, color = period, shape = zone)) +
-  geom_point() +
-  geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
-  annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "19/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  labs(title = "Lumière en fonction de la période et de la zone",
-       x = "Date", y = "ln(µmol/m²/sec)") +
-  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
-  theme_minimal()
 
 ggplot(df_solar, aes(x = lon, y = lat, color = zone, shape = period)) +
   geom_point(size = 3, alpha = 0.8) +
@@ -473,9 +496,10 @@ ggplot(df_solar, aes(x = lon, y = lat, color = zone, shape = period)) +
   theme_minimal()
 
 ```
+
 ```{r}
 df_solar <- df_solar %>%
-  mutate(distance_to_center = sqrt((lon - lon_median)^2 + (lat - lat_median)^2))
+  mutate(distance_to_center = sqrt((lon - lon_center)^2 + (lat - lat_center)^2))
 
 df_solar <- df_solar %>%
   mutate(distance_group = case_when(
@@ -497,23 +521,24 @@ ggplot(df_solar, aes(x = lon, y = lat, color = distance_group, shape = period)) 
 ```
 
 ```{r extract Suspicious solar profiles}
-max_night_light <- df_solar %>%
-  filter(period == "Night") %>%
-  summarise(max_light = max(light, na.rm = TRUE)) %>%
-  pull(max_light)
+# max_night_light <- df_solar %>%
+#   filter(period == "Night") %>%
+#   summarise(max_light = max(light, na.rm = TRUE)) %>%
+#   pull(max_light)
+# 
+# night_rows <- which(df_solar$period == "Night")
+# local_max_index <- which.max(df_solar$light[night_rows])
+# global_max_index <- night_rows[local_max_index]
 
-night_rows <- which(df_solar$period == "Night")
-local_max_index <- which.max(df_solar$light[night_rows])
-global_max_index <- night_rows[local_max_index]
-
-cat("profil index: ", global_max_index, " - Value: ", max_night_light,"\n")
+global_max_index <- 99
 
 plot(light[m,global_max_index], pres[m,global_max_index],
      type = "l",
      xlim = range(light[,global_max_index], na.rm = TRUE),
-     ylim = rev(c(0, max_depth_dataset)),
+     ylim = rev(c(0, 50)),
      xlab = "Light ln(µmol/m²/s)",
-     ylab = "Depth (m)")
+     ylab = "Depth (m)",
+     main = paste0("profil index: ", global_max_index, " - Value: ",  sprintf("%.2f", max_night_light), " (", format(date_subset[global_max_index], "%Y-%m-%d"), ")"))
 grid()
 
 ```
@@ -582,9 +607,9 @@ plot(x_sub2, legend = FALSE)
 
 x_sub2=round(x_sub2)
 #description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
-x_sub2[x_sub2 == 0 | x_sub2 == 3 | x_sub2 == 5| x_sub2 == 6] <- NA
+x_sub2[x_sub2 == 0 |x_sub2 == 1 | x_sub2 == 2 | x_sub2 == 3 | x_sub2 == 5| x_sub2 == 6] <- NA
 
-glacier=x_sub2[[1]]
+glacier=x_sub2[[4]]
 ```
 
 ```{r AMSR2}
@@ -604,47 +629,104 @@ amsr_cropped=crop(amsr_raster, boxext)
 plot(amsr_cropped)
 
 amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
-plot(amsr_raster_cropped) #this gives me a wrong map compared to what it should be.
+plot(amsr_raster_cropped)
 
 amsr_spat <- rast(amsr_raster_cropped)  # RasterLayer -> SpatRaster
 ```
 
 ```{r}
+library(stringr)
+
+wgs <- "+proj=longlat +ellps=WGS84"
+amsr_dir <- AMSR_FOLDER_PATH
+all_files <- list.files(amsr_dir, full.names = TRUE)
+
+target_year_month <- "201901"
+
+selected_files <- all_files[
+  str_detect(all_files, paste0("s3125-", target_year_month))
+]
+
+raster_list <- lapply(selected_files, function(f) {
+  r <- raster(f)
+  r[r > 100] <- NA_real_
+  r
+})
+
+raster_stack <- stack(raster_list)
+mean_raster <- calc(raster_stack, fun = mean, na.rm = TRUE)
+median_raster <- calc(raster_stack, fun = median, na.rm = TRUE)
+#sd_raster <- calc(raster_stack, fun = sd, na.rm = TRUE)
+
+points <- cbind(
+  lon = c(LON_MIN, LON_MAX),  
+  lat = c(LAT_MIN, LAT_MAX)
+)
+
+boxext <- extent(projectExtent(raster(extent(c(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)), crs = wgs), projection(mean_raster)))
+
+mean_raster_cropped <- crop(mean_raster, boxext)
+median_raster_cropped <- crop(median_raster, boxext)
+# sd_raster_cropped <- crop(sd_raster, boxext)
+
+mean_raster_cropped_wgs <- projectRaster(mean_raster_cropped, crs = wgs)
+median_raster_cropped_wgs <- projectRaster(median_raster_cropped, crs = wgs)
+# sd_raster_cropped_wgs <- projectRaster(sd_raster_cropped, crs = wgs)
+
+mean_spat <- rast(mean_raster_cropped_wgs)
+median_spat <- rast(median_raster_cropped_wgs)
+# sd_spat <- rast(sd_raster_cropped_wgs)
+
+plot(mean_spat, main = "Moyenne AMSR - Janvier 2019")
+plot(median_spat, main = "Médiane AMSR - Janvier 2019")
+# plot(sd_spat, main = "Écart-type AMSR - Janvier 2019")
+
+```
+
+```{r Draft map SIC FI}
+month_profile = 4
+profiles_per_month <- df_surface_clean %>% filter(lubridate::month(date) == month_profile)
 
 ggplot() +
   geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6)+ #bathy
   geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6)+
-  geom_spatraster(data = amsr_spat, alpha = 0.6)+ # AMSR2
-  geom_spatraster(data = glacier, alpha = 0.6)+ #glace
-  scale_fill_cmocean(name = "deep", direction = -1, alpha = 0.5, guide = guide_legend(title = "Type"))+
-  geom_point(data = df_surface_clean, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1)+
-  xlab("Longitude") + ylab("Latitude")+
+  geom_spatraster(data = mean_spat, alpha = 0.6)+ # moyenne AMSR2 sur le mois 
+  geom_spatraster(data = glacier, alpha = 0.6)+ # glace
+  geom_point(
+    data = df_surface_clean %>%
+      filter(lubridate::month(date) == month_profile),  # points du mois month_profile
+    aes(x = lon, y = lat),
+    shape = 21, color = "black", fill = "yellow", size = 1
+  ) +  xlab("Longitude") + ylab("Latitude")+
   theme_minimal()
 ```
 
 ```{r}
-# Boucler sur les rasters pour récup les lon lat date mois SIC en % et fast-ice (mask 1 yen a 0 yen a pas)
+ggplot() +
+  geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6) + # bathy
+  geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6) +
+  geom_spatraster(data = mean_spat, alpha = 0.6) + # moyenne AMSR2 sur le mois
+  geom_spatraster(data = glacier, alpha = 0.6) + # glacier
+  geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme_minimal() +
+  coord_sf(xlim = c(139, 141),ylim = c(-66.8, -66))
+```
 
-#newdata=data.frame()
-#
-# for (i in 1:nrow(dives2)){
-#   dt<-dives2[i,]  # IMPORTANT
-# #open date and hour
-# 
-#   points <- cbind(dt$lon, dt$lat)   # IMPORTANT
-# 
-#   fastice_sub <- subset(new_r, dt$index)
-#   fastice_sub[fastice_sub == 0 |fastice_sub == 1 | fastice_sub == 2 | fastice_sub == 3 | fastice_sub == 5| fastice_sub == 6] <- NA
-#   fastice_sub[fastice_sub == 4] <- 1
-# 
-# 
-#   fastice=extract(fastice_sub, (project(points, to = prj, from = "EPSG:4326")))   # IMPORTANT
-#  
-#   names(fastice)<-("fastice")
-#   dt<-cbind(dt,fastice)   # IMPORTANT
-#   newdata=rbind(newdata,dt)   # IMPORTANT
-# }
-# head(newdata)
+```{r}
+library(sf)
+profiles_per_month$mois <- lubridate::month(profiles_per_month$date)
+
+points_sf <- st_as_sf(profiles_per_month, coords = c("lon", "lat"), crs = 4326) # Transforme en objets spatiaux
+profiles_per_month$SIC <- terra::extract(amsr_spat, vect(points_sf))[,2]  # [,2] car extract retourne ID & valeur
+
+glacier_mask <- glacier
+glacier_mask[!(glacier_mask == 4)] <- 0
+glacier_mask[glacier_mask == 4] <- 1
+
+profiles_per_month$glacier_presence <- terra::extract(glacier_mask, vect(points_sf))[,2]
+
+head(profiles_per_month)
 ```
 
 ```{r SaveAndClassifyChlaProfiles}
