@@ -21,6 +21,7 @@ library(oce)
 library(terra)
 library(tidyterra)
 library(cmocean)
+library(stringr)
 
 ```
 
@@ -343,7 +344,7 @@ light_surf_avg <- apply(light_interval, 2, function(x) {
 light_20m <- light[20, ]
 light_40m <- light[40, ]
 
-df_light_surface <- data.frame(
+df_light <- data.frame(
   lon = lon_subset,
   lat = lat_subset,
   date = date_subset,
@@ -352,17 +353,17 @@ df_light_surface <- data.frame(
   light_40 = light_40m
 )
 
-df_surface_clean <- df_light_surface %>% filter(!is.na(light_surf))
-df_20m_clean <- df_light_surface %>% filter(!is.na(light_20))
-df_40m_clean <- df_light_surface %>% filter(!is.na(light_40))
+df_10m_clean <- df_light %>% filter(!is.na(light_surf))
+df_20m_clean <- df_light %>% filter(!is.na(light_20))
+df_40m_clean <- df_light %>% filter(!is.na(light_40))
 
-n_profiles_surf <- length(df_surface_clean$light_surf)
+n_profiles_surf <- length(df_10m_clean$light_surf)
 n_profiles_20 <- length(df_20m_clean$light_20)
 n_profiles_40 <- length(df_40m_clean$light_40)
 
-ggplot(df_surface_clean, aes(x = lon, y = lat, color = light_surf)) +
+ggplot(df_10m_clean, aes(x = lon, y = lat, color = light_surf)) +
   geom_point(size = 2) +
-  scale_color_viridis_c() +
+  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
   labs(
     title = paste0(n_profiles_surf," light profiles (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7],"m deep)"),
     x = "Longitude",
@@ -373,7 +374,7 @@ ggplot(df_surface_clean, aes(x = lon, y = lat, color = light_surf)) +
 
 ggplot(df_20m_clean, aes(x = lon, y = lat, color = light_20)) +
   geom_point(size = 2) +
-  scale_color_viridis_c() +
+  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
   labs(
     title = paste0(n_profiles_20," light profiles (", 20,"m deep)"),
     x = "Longitude",
@@ -382,16 +383,17 @@ ggplot(df_20m_clean, aes(x = lon, y = lat, color = light_20)) +
   ) +
   theme_minimal()
 
-ggplot(df_40m_clean, aes(x = lon, y = lat, color = light_40)) +
+ggplot(df_40m_clean %>% filter(!is.na(light_40)), aes(x = lon, y = lat, color = light_40)) +
   geom_point(size = 2) +
-  scale_color_viridis_c() +
+  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
   labs(
-    title = paste0(n_profiles_40, " light profiles (", 40,"m deep)"),
+    title = paste0(n_profiles_40, " light profiles (", 40, "m deep)"),
     x = "Longitude",
     y = "Latitude",
     color = "Light\nln(µmol/m²/s)"
   ) +
   theme_minimal()
+
 ```
 ```{r}
 solar_angle = sunAngle(date_subset, lon_subset, lat_subset)$altitude
@@ -422,17 +424,18 @@ nPeriod_by_lat <- df_solar %>%
 
 ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
   geom_point() +
-  facet_wrap(~lat_bin, scales = "free_y") +
-  labs(title = "Solar Angle by Latitude Bin",
-       x = "Date", y = "Solar Angle (°)") +
+  facet_wrap(~lat_bin, scales = "fixed") +
+  coord_cartesian(ylim = c(-40, 40)) +
+  labs(title = "Solar Angle by Latitude Bin",x = "Date",y = "Solar Angle (°)") +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
+
 
 ggplot(df_solar, aes(x = date, y = light, color = period)) +
   geom_point() +
   facet_wrap(~lat_bin, scales = "free_y") +
-  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7], "m deep) by Latitude Bin"),
-       x = "Date", y = "ln(µmol/m²/sec)") +
+  coord_cartesian(ylim = c(-5, 15)) +
+  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7], "m deep) by Latitude Bin"), x = "Date", y = "ln(µmol/m²/sec)") +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
 
@@ -486,12 +489,10 @@ df_solar <- df_solar %>%
 
 ggplot(df_solar, aes(x = lon, y = lat, color = zone, shape = period)) +
   geom_point(size = 3, alpha = 0.8) +
-  labs(title = "Zones (couleur) et période jour/nuit/crépuscule (forme)",
-       x = "Longitude", y = "Latitude") +
-  scale_color_manual(values = c("Nord-Ouest" = "darkorange",
-                                "Nord-Est" = "purple",
-                                "Sud-Ouest" = "blue",
-                                "Sud-Est" = "darkgreen")) +
+  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # croix rouge
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # étiquette
+  labs(title = "Zones (couleur) et période jour/nuit/crépuscule (forme)", x = "Longitude", y = "Latitude") +
+  scale_color_manual(values = c("Nord-Ouest" = "darkorange", "Nord-Est" = "purple", "Sud-Ouest" = "blue", "Sud-Est" = "darkgreen")) +
   scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
   theme_minimal()
 
@@ -510,17 +511,16 @@ df_solar <- df_solar %>%
 
 ggplot(df_solar, aes(x = lon, y = lat, color = distance_group, shape = period)) +
   geom_point(size = 2, alpha = 0.8) +
-  labs(title = "",
-       x = "Longitude", y = "Latitude") +
-  scale_color_manual(values = c("Centre" = "firebrick",
-                                "Périphérie proche" = "goldenrod",
-                                "Périphérie lointaine" = "steelblue")) +
+  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # croix rouge
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # étiquette
+  labs(title = "", x = "Longitude", y = "Latitude") + scale_color_manual(values = c("Centre" = "firebrick", "Périphérie proche" = "goldenrod", "Périphérie lointaine" = "steelblue")) +
   scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
   theme_minimal()
 
 ```
 
 ```{r extract Suspicious solar profiles}
+# CODE POUR LA PLUS FORTE VALEUR DANS LA NUIT
 # max_night_light <- df_solar %>%
 #   filter(period == "Night") %>%
 #   summarise(max_light = max(light, na.rm = TRUE)) %>%
@@ -612,40 +612,68 @@ x_sub2[x_sub2 == 0 |x_sub2 == 1 | x_sub2 == 2 | x_sub2 == 3 | x_sub2 == 5| x_sub
 glacier=x_sub2[[4]]
 ```
 
-```{r AMSR2}
-wgs <- "+proj=longlat +ellps=WGS84"
-amsr_raster <- raster(AMSR_PATH)
-amsr_raster[amsr_raster > 100] <- NA_real_
-amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
-plot(amsr_raster)
+```{r}
+# TRAITER LES RASTERS ENTIERS : TROP LONG. LE CODE SUIVANT TRAITE SEULEMENT LA PARTIE CROPPE : PLUS RAPIDE
 
-points <- cbind(
-  lon = c(LON_MIN, LON_MAX),  
-  lat = c(LAT_MIN, LAT_MAX)
-)
-
-boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
-amsr_cropped=crop(amsr_raster, boxext)
-plot(amsr_cropped)
-
-amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
-plot(amsr_raster_cropped)
-
-amsr_spat <- rast(amsr_raster_cropped)  # RasterLayer -> SpatRaster
+# library(stringr)
+# 
+# wgs <- "+proj=longlat +ellps=WGS84"
+# amsr_dir <- AMSR_FOLDER_PATH
+# all_files <- list.files(amsr_dir, full.names = TRUE)
+# 
+# target_year_month <- "201901"
+# 
+# selected_files <- all_files[
+#   str_detect(all_files, paste0("s3125-", target_year_month))
+# ]
+# 
+# raster_list <- lapply(selected_files, function(f) {
+#   r <- raster(f)
+#   r[r > 100] <- NA_real_
+#   r
+# })
+# 
+# raster_stack <- stack(raster_list)
+# mean_raster <- calc(raster_stack, fun = mean, na.rm = TRUE)
+# median_raster <- calc(raster_stack, fun = median, na.rm = TRUE)
+# sd_raster <- calc(raster_stack, fun = sd, na.rm = TRUE)
+# 
+# points <- cbind(
+#   lon = c(LON_MIN, LON_MAX),  
+#   lat = c(LAT_MIN, LAT_MAX)
+# )
+# 
+# boxext <- extent(projectExtent(raster(extent(c(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)), crs = wgs), projection(mean_raster)))
+# 
+# mean_raster_cropped <- crop(mean_raster, boxext)
+# median_raster_cropped <- crop(median_raster, boxext)
+# sd_raster_cropped <- crop(sd_raster, boxext)
+# 
+# mean_raster_cropped_wgs <- projectRaster(mean_raster_cropped, crs = wgs)
+# median_raster_cropped_wgs <- projectRaster(median_raster_cropped, crs = wgs)
+# sd_raster_cropped_wgs <- projectRaster(sd_raster_cropped, crs = wgs)
+# 
+# mean_spat <- rast(mean_raster_cropped_wgs)
+# median_spat <- rast(median_raster_cropped_wgs)
+# sd_spat <- rast(sd_raster_cropped_wgs)
+# 
+# plot(mean_spat, main = "Moyenne AMSR - Janvier 2019")
+# plot(median_spat, main = "Médiane AMSR - Janvier 2019")
+# plot(sd_spat, main = "Écart-type AMSR - Janvier 2019")
+# 
 ```
 
 ```{r}
-library(stringr)
 
 wgs <- "+proj=longlat +ellps=WGS84"
 amsr_dir <- AMSR_FOLDER_PATH
 all_files <- list.files(amsr_dir, full.names = TRUE)
 
 target_year_month <- "201901"
+date_obj <- as.Date(paste0(target_year_month, "01"), format = "%Y%m%d")
+formatted_title <- format(date_obj, "%B %Y") 
 
-selected_files <- all_files[
-  str_detect(all_files, paste0("s3125-", target_year_month))
-]
+selected_files <- all_files[str_detect(all_files, paste0("s3125-", target_year_month))]
 
 raster_list <- lapply(selected_files, function(f) {
   r <- raster(f)
@@ -654,33 +682,26 @@ raster_list <- lapply(selected_files, function(f) {
 })
 
 raster_stack <- stack(raster_list)
-mean_raster <- calc(raster_stack, fun = mean, na.rm = TRUE)
-median_raster <- calc(raster_stack, fun = median, na.rm = TRUE)
-#sd_raster <- calc(raster_stack, fun = sd, na.rm = TRUE)
 
-points <- cbind(
-  lon = c(LON_MIN, LON_MAX),  
-  lat = c(LAT_MIN, LAT_MAX)
-)
-
+points <- cbind(lon = c(LON_MIN, LON_MAX), lat = c(LAT_MIN, LAT_MAX))
 boxext <- extent(projectExtent(raster(extent(c(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)), crs = wgs), projection(mean_raster)))
+raster_cropped <- crop(raster_stack, boxext)
 
-mean_raster_cropped <- crop(mean_raster, boxext)
-median_raster_cropped <- crop(median_raster, boxext)
-# sd_raster_cropped <- crop(sd_raster, boxext)
+mean_raster <- calc(raster_cropped, fun = mean, na.rm = TRUE)
+median_raster <- calc(raster_cropped, fun = median, na.rm = TRUE)
+sd_raster <- calc(raster_cropped, fun = sd, na.rm = TRUE)
 
-mean_raster_cropped_wgs <- projectRaster(mean_raster_cropped, crs = wgs)
-median_raster_cropped_wgs <- projectRaster(median_raster_cropped, crs = wgs)
-# sd_raster_cropped_wgs <- projectRaster(sd_raster_cropped, crs = wgs)
+mean_raster_wgs <- projectRaster(mean_raster, crs = wgs)
+median_raster_wgs <- projectRaster(median_raster, crs = wgs)
+sd_raster_wgs <- projectRaster(sd_raster, crs = wgs)
 
-mean_spat <- rast(mean_raster_cropped_wgs)
-median_spat <- rast(median_raster_cropped_wgs)
-# sd_spat <- rast(sd_raster_cropped_wgs)
+mean_spat <- rast(mean_raster_wgs)
+median_spat <- rast(median_raster_wgs)
+sd_spat <- rast(sd_raster_wgs)
 
-plot(mean_spat, main = "Moyenne AMSR - Janvier 2019")
-plot(median_spat, main = "Médiane AMSR - Janvier 2019")
-# plot(sd_spat, main = "Écart-type AMSR - Janvier 2019")
-
+plot(mean_spat, main = paste("AMSR mean -", formatted_title))
+plot(median_spat, main = paste("AMSR mediane -", formatted_title))
+plot(sd_spat, main = paste("AMSR  SD -", formatted_title))
 ```
 
 ```{r Draft map SIC FI}
@@ -692,12 +713,8 @@ ggplot() +
   geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6)+
   geom_spatraster(data = mean_spat, alpha = 0.6)+ # moyenne AMSR2 sur le mois 
   geom_spatraster(data = glacier, alpha = 0.6)+ # glace
-  geom_point(
-    data = df_surface_clean %>%
-      filter(lubridate::month(date) == month_profile),  # points du mois month_profile
-    aes(x = lon, y = lat),
-    shape = 21, color = "black", fill = "yellow", size = 1
-  ) +  xlab("Longitude") + ylab("Latitude")+
+  geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +  
+  xlab("Longitude") + ylab("Latitude")+
   theme_minimal()
 ```
 
@@ -715,18 +732,25 @@ ggplot() +
 
 ```{r}
 library(sf)
-profiles_per_month$mois <- lubridate::month(profiles_per_month$date)
+dt_ddu <- format(profiles_per_month, tz = "Australia/Hobart", usetz = TRUE)
+profiles_per_month$month <- lubridate::month(profiles_per_month$date)
 
 points_sf <- st_as_sf(profiles_per_month, coords = c("lon", "lat"), crs = 4326) # Transforme en objets spatiaux
-profiles_per_month$SIC <- terra::extract(amsr_spat, vect(points_sf))[,2]  # [,2] car extract retourne ID & valeur
+points_vect <- terra::vect(points_sf)
 
 glacier_mask <- glacier
-glacier_mask[!(glacier_mask == 4)] <- 0
 glacier_mask[glacier_mask == 4] <- 1
 
-profiles_per_month$glacier_presence <- terra::extract(glacier_mask, vect(points_sf))[,2]
+extract_mean   <- terra::extract(mean_spat, points_vect, ID = FALSE)
+extract_median <- terra::extract(median_spat, points_vect, ID = FALSE)
+extract_sd     <- terra::extract(sd_spat, points_vect, ID = FALSE)
+extract_glac   <- terra::extract(glacier_mask, points_vect, ID = FALSE)
 
-head(profiles_per_month)
+profiles_per_month$SICm_mean   <- extract_mean[,1]
+profiles_per_month$SICm_median <- extract_median[,1]
+profiles_per_month$SICm_sd     <- extract_sd[,1]
+profiles_per_month$glacier_presence <- extract_glac[,1]
+
 ```
 
 ```{r SaveAndClassifyChlaProfiles}
