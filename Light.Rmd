@@ -49,10 +49,10 @@ DDU_loc=as.data.frame(DDU_loc)
 # for (nc_file in nc_files) {
 #   nc_data <- nc_open(nc_file)
 #   juld <- ncvar_get(nc_data, "JULD")
-#   
+# 
 #   dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
 #   dateTime <- round(dateTime, units = "mins")
-#   
+# 
 #   ranges_list[[basename(nc_file)]] <- range(dateTime, na.rm = TRUE)
 #   nc_close(nc_data)
 # }
@@ -63,13 +63,42 @@ DDU_loc=as.data.frame(DDU_loc)
 # }
 ```
 
+```{r}
+# ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+# DATA_FOLDER <- "oceanographic_data"
+# DEPLOY_FOLDER <- "wd31"
+# DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+# 
+# nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+# profiles_list <- list()
+# 
+# for (nc_file in nc_files) 
+# {
+#   nc_data <- nc_open(nc_file)
+#   
+#   profiles_data <- ncvar_get(nc_data, "LIGHT")
+#   
+#   num_profiles <- dim(profiles_data)[2] 
+#   
+#   profiles_list[[basename(nc_file)]] <- num_profiles
+#   
+#   nc_close(nc_data)
+# }
+# 
+# for (file_name in names(profiles_list)) {
+#   cat("\nFichier:", file_name, "\n")
+#   cat("Nombre de profils de lumière:", profiles_list[[file_name]], "\n")
+# }
+
+```
+
 ## Paths
 ```{r paths}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data"
 DEPLOY_FOLDER <- "wd11"
-SEAL_NAME <- "wd11-687-18"
+SEAL_NAME <- "wd11-909-18"
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 
@@ -94,17 +123,16 @@ AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 ```{r nc-code}
 nc_data <- nc_open(NC_PATH)
 # print(nc_data)
-lon <- ncvar_get(nc_data, "LONGITUDE")
-lat <- ncvar_get(nc_data, "LATITUDE")
-chla <- ncvar_get(nc_data, "CHLA")
+lon   <- ncvar_get(nc_data, "LONGITUDE")
+lat   <- ncvar_get(nc_data, "LATITUDE")
+chla  <- ncvar_get(nc_data, "CHLA")
 light <- ncvar_get(nc_data, "LIGHT")
-temp <- ncvar_get(nc_data, "TEMP_ADJUSTED")
-psal <- ncvar_get(nc_data,"PSAL_ADJUSTED")
-pres <- ncvar_get(nc_data, "PRES_ADJUSTED")
-juld <- ncvar_get(nc_data, "JULD")
+temp  <- ncvar_get(nc_data, "TEMP_ADJUSTED")
+sal   <- ncvar_get(nc_data, "PSAL_ADJUSTED")
+pres  <- ncvar_get(nc_data, "PRES_ADJUSTED")
+juld  <- ncvar_get(nc_data, "JULD")
 ```
 
-## Long Lat Light
 ```{r dataframe}
 max_depth_dataset <- 150
 m = 1:max_depth_dataset
@@ -114,6 +142,72 @@ dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
 dateTime <- round(dateTime, units = "mins")  # arrondi à la minute la plus proche
 ```
 
+## MLD
+```{r}
+n_profiles <- ncol(sal)
+n_levels <- nrow(sal)
+
+sigma0_mat <- matrix(NA, nrow = n_levels, ncol = n_profiles)
+mld_vec <- rep(NA, n_profiles)
+densThreshold <- 0.03
+refDepth <- 10
+minProfileStartDepth <- 20
+
+profileStartDepth <- rep(NA, n_profiles)
+for (i in 1:n_profiles) {
+  firstGood <- which(!is.na(temp[, i]) & !is.na(pres[, i]) & !is.na(sal[, i]))[1]
+  if (!is.na(firstGood)) {
+    profileStartDepth[i] <- pres[firstGood, i]
+  }
+}
+validProfiles <- which(profileStartDepth <= minProfileStartDepth)
+
+for (i in validProfiles) {
+  S <- sal[, i]
+  T <- temp[, i]
+  P <- pres[, i]
+
+  good <- !is.na(S) & !is.na(T) & !is.na(P)
+
+  if (sum(good) > 5) {
+    ctd <- as.ctd(salinity = S[good], temperature = T[good], pressure = P[good])
+    sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
+
+    full_sigma0 <- rep(NA, n_levels)
+    full_sigma0[good] <- sigma0
+    sigma0_mat[, i] <- full_sigma0
+
+    # Trouver l'indice de référence (premier >= 10 m)
+    refIdx <- which(ctd@data$pressure >= refDepth)[1]
+
+    if (!is.na(refIdx)) {
+      refSigma0 <- sigma0[refIdx]
+
+      # Différence de densité sur tous les niveaux valides
+      deltaSigma <- full_sigma0 - refSigma0
+
+      # Trouver l'indice où le seuil est dépassé au-delà de 10 m
+      mld_idx <- which(deltaSigma > densThreshold & P > refDepth)[1]
+
+      if (!is.na(mld_idx)) {
+        mld_vec[i] <- P[mld_idx]
+      }
+    }
+  }
+}
+
+valid_mld_indices <- which(!is.na(mld_vec))
+mld_vals <- mld_vec[valid_mld_indices]
+
+mld_moving_median <- rollapply(mld_vals, width = 180, FUN = median, na.rm = TRUE, align = "center", partial = TRUE)
+
+plot(valid_mld_indices, mld_vals, pch = 4, col = "blue",
+     ylim = rev(range(mld_vals, na.rm = TRUE)), xlim = range(0,200), xlab = "Profil", ylab = "MLD (m)")
+lines(valid_mld_indices, mld_moving_median, col = "red", lwd = 2)
+
+```
+
+## Long Lat Light
 ```{r corrected lon lat}
 diag <- read.csv("diag_2017-2024_forclaude_07apr24.csv", stringsAsFactors = FALSE)
 diag$date <- as.POSIXct(diag$date, format="%Y-%m-%d %H:%M")
@@ -173,6 +267,7 @@ light_subset <- light[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_prepr
 lat_subset <- lat[!col_na_only]
 lon_subset <- lon[!col_na_only]
 date_subset <- dateTime[!col_na_only]
+pres_subset <- pres [1:MAX_CHLA_DEPTH, !col_na_only]
 
 total_light <- colSums(light_subset, na.rm = TRUE)
 profil_names <- as.character(seq_along(total_light))
@@ -193,14 +288,20 @@ axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1,
 
 ```{r DarkValue}
 
-last_nonzero_vals <- sapply(1:ncol(light_subset), function(n) {
-  idx <- which(!is.na(light_subset[, n]) & light_subset[, n] != 0)
-  if (length(idx) > 0) {
-    light_subset[max(idx), n]
+median_last10_vals <- sapply(1:ncol(light_subset), function(n) {
+  col_data <- light_subset[, n]
+  idx <- which(!is.na(col_data) & col_data != 0)
+
+  if (length(idx) >= 1) {
+    # Prendre les indices des 10 dernières valeurs
+    last10_idx <- tail(idx, 10)
+    median(col_data[last10_idx], na.rm = TRUE)
+  } else {
+    NA
   }
 })
 
-light_corrected <- sweep(light_subset, 2, last_nonzero_vals, FUN = "-") # dark-value ? Not sure mhmhmhm
+light_corrected <- sweep(light_subset, 2, median_last10_vals, FUN = "-")
 
 # Plot only one of the 150
 plot(light_subset[1:MAX_CHLA_DEPTH, n], pres[1:MAX_CHLA_DEPTH, n], type = "l", col = "blue",
@@ -215,6 +316,18 @@ legend("bottomright", legend = c("Original", "Corrected"),
 ```
 
 ```{r}
+
+light_non_log <- exp(light_corrected)
+par15_depths <- rep(NA, ncol(light_non_log))  # vecteur pour stocker les profondeurs
+
+for (i in 1:ncol(light_non_log)) {
+  below15 <- which(light_non_log[, i] < 15)
+  if (length(below15) > 0) {
+    # On prend la première profondeur où light < 15
+    par15_depths[i] <- pres[min(below15), i]
+  }
+}
+
 matplot(light[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
@@ -233,8 +346,49 @@ matplot(light_corrected, pres[1:MAX_CHLA_DEPTH,],
         main = paste0("Light profiles corrected : ", SEAL_NAME))
 grid()
 
+abline(h = par15_depths, col = "red", lty = 2)
+
 light <- light_corrected
 ```
+
+## Couche Eupho
+```{r}
+# pas utile pour le moment (attention code peut etre faux)
+
+# # Calculer Zeu : première profondeur où la lumière < 1% (log-scale)
+# zeuDep_temp <- apply(light, 2, function(col) {
+#   idx <- which(col < -log(100))[1]  # première position vraie
+#   if (is.na(idx)) NA else idx       # si rien trouvé, mettre NA
+# })
+# 
+# # Remplacer les 0 (si jamais) par NA (équivalent MATLAB)
+# zeuDep_temp[zeuDep_temp == 0] <- NA
+# 
+# # Stocker dans la structure lightData
+# Zeu <- zeuDep_temp
+
+```
+
+## Profondeur de quenching basé sur le PAR 15
+```{r}
+quenchDep_temp <- apply(light, 2, function(col) {
+  idx <- tail(which(col > 15), 1)
+  if (length(idx) == 0) return(NA) else return(idx)
+})
+quenchDepth <- quenchDep_temp
+
+# %% compute depth of quenching threshold 15 umol.m-2.s-1 (xing et al. 2018)
+# 
+# % lightData.quenchDepth contains depth of quenching threshold at 15 umol.m-2.s-1
+# % (xing et al. 2018)
+# 
+# quenchDep_temp = find_ndim(L_adNonLogRegDk > 15, 1, 'last').' ;
+# quenchDep_temp(quenchDep_temp == 0) = NaN ;
+# 
+# lightData.quenchDepth = quenchDep_temp ;
+
+```
+
 ```{r SaveAndClassifyLightProfiles, echo=FALSE}
 
 dir_standard = "profils_light_standard"
@@ -456,10 +610,10 @@ vline_dates <- as.POSIXct(c("2019-02-20 01:12:00", "2019-03-21 00:46:00", "2019-
 
 ggplot(df_solar, aes(x = date, y = light, color = period)) +
   geom_point() +
-  geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
-  annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "20/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  # geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
+  # annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "20/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  # annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  # annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
   labs(
     title = paste0("Light (", SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[7], "m deep)"),
     x = "Date", y = "ln(µmol/m²/sec)"
@@ -516,16 +670,16 @@ ggplot(df_solar, aes(x = lon, y = lat, color = distance_group, shape = period)) 
 
 ```{r extract Suspicious solar profiles}
 # CODE POUR LA PLUS FORTE VALEUR DANS LA NUIT
-# max_night_light <- df_solar %>%
-#   filter(period == "Night") %>%
-#   summarise(max_light = max(light, na.rm = TRUE)) %>%
-#   pull(max_light)
-# 
-# night_rows <- which(df_solar$period == "Night")
-# local_max_index <- which.max(df_solar$light[night_rows])
-# global_max_index <- night_rows[local_max_index]
+max_night_light <- df_solar %>%
+  filter(period == "Night") %>%
+  summarise(max_light = max(light, na.rm = TRUE)) %>%
+  pull(max_light)
 
-global_max_index <- 99
+night_rows <- which(df_solar$period == "Night")
+local_max_index <- which.max(df_solar$light[night_rows])
+global_max_index <- night_rows[local_max_index]
+
+#global_max_index <- 99
 
 plot(light[m,global_max_index], pres[m,global_max_index],
      type = "l",
@@ -608,57 +762,26 @@ glacier=x_sub2[[4]]
 ```
 
 ```{r}
-# TRAITER LES RASTERS ENTIERS : TROP LONG. LE CODE SUIVANT TRAITE SEULEMENT LA PARTIE CROPPE : PLUS RAPIDE
-
-# library(stringr)
-# 
-# wgs <- "+proj=longlat +ellps=WGS84"
-# amsr_dir <- AMSR_FOLDER_PATH
-# all_files <- list.files(amsr_dir, full.names = TRUE)
-# 
-# target_year_month <- "201901"
-# 
-# selected_files <- all_files[
-#   str_detect(all_files, paste0("s3125-", target_year_month))
-# ]
-# 
-# raster_list <- lapply(selected_files, function(f) {
-#   r <- raster(f)
-#   r[r > 100] <- NA_real_
-#   r
-# })
-# 
-# raster_stack <- stack(raster_list)
-# mean_raster <- calc(raster_stack, fun = mean, na.rm = TRUE)
-# median_raster <- calc(raster_stack, fun = median, na.rm = TRUE)
-# sd_raster <- calc(raster_stack, fun = sd, na.rm = TRUE)
-# 
-# points <- cbind(
-#   lon = c(LON_MIN, LON_MAX),  
-#   lat = c(LAT_MIN, LAT_MAX)
-# )
-# 
-# boxext <- extent(projectExtent(raster(extent(c(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)), crs = wgs), projection(mean_raster)))
-# 
-# mean_raster_cropped <- crop(mean_raster, boxext)
-# median_raster_cropped <- crop(median_raster, boxext)
-# sd_raster_cropped <- crop(sd_raster, boxext)
-# 
-# mean_raster_cropped_wgs <- projectRaster(mean_raster_cropped, crs = wgs)
-# median_raster_cropped_wgs <- projectRaster(median_raster_cropped, crs = wgs)
-# sd_raster_cropped_wgs <- projectRaster(sd_raster_cropped, crs = wgs)
-# 
-# mean_spat <- rast(mean_raster_cropped_wgs)
-# median_spat <- rast(median_raster_cropped_wgs)
-# sd_spat <- rast(sd_raster_cropped_wgs)
-# 
-# plot(mean_spat, main = "Moyenne AMSR - Janvier 2019")
-# plot(median_spat, main = "Médiane AMSR - Janvier 2019")
-# plot(sd_spat, main = "Écart-type AMSR - Janvier 2019")
-# 
+wgs <- "+proj=longlat +ellps=WGS84"
+ amsr_raster <- raster(AMSR_PATH)
+ amsr_raster[amsr_raster > 100] <- NA_real_
+ amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
+ plot(amsr_raster)
+ 
+ points <- cbind(
+   lon = c(LON_MIN, LON_MAX),  
+   lat = c(LAT_MIN, LAT_MAX)
+ )
+ 
+ boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
+ amsr_cropped=crop(amsr_raster, boxext)
+ plot(amsr_cropped)
+ 
+ amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
+ plot(amsr_raster_cropped)
 ```
 
-```{r}
+```{r AMSR}
 
 wgs <- "+proj=longlat +ellps=WGS84"
 amsr_dir <- AMSR_FOLDER_PATH
@@ -736,11 +859,13 @@ points_vect <- terra::vect(points_sf)
 glacier_mask <- glacier
 glacier_mask[glacier_mask == 4] <- 1
 
+extract_sic    <- terra::extract(amsr_raster_cropped, points_vect, ID = FALSE)
 extract_mean   <- terra::extract(mean_spat, points_vect, ID = FALSE)
 extract_median <- terra::extract(median_spat, points_vect, ID = FALSE)
 extract_sd     <- terra::extract(sd_spat, points_vect, ID = FALSE)
 extract_glac   <- terra::extract(glacier_mask, points_vect, ID = FALSE)
 
+profiles_per_month$SICm        <- extract_sic[,1]
 profiles_per_month$SICm_mean   <- extract_mean[,1]
 profiles_per_month$SICm_median <- extract_median[,1]
 profiles_per_month$SICm_sd     <- extract_sd[,1]
@@ -782,7 +907,21 @@ plot(
 
 axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
 ```
+
 ```{r DarkValue}
+# 
+# Calcule de la médiane de CHLA sur les 10 derniers mètres d’un profil profond (prof_depth)
+# prof_depth est un offset à soustraire du profil CHLA pour chaque mesure.
+# valeurs manquantes = les plus proches valides (fillmissing).
+# 
+# L’offset calculé est soustrait à toutes les valeurs du profil.
+# Les valeurs négatives (artefacts) sont remplacées par 0.
+
+# Détection et suppression de signaux CHLA constants en profondeur
+# Pour chaque profil non vide :
+# Cherche la profondeur où le signal devient constant (artefact possible).
+# Si variation en profondeur < un seuil (delta_for_cstCHLA), la partie constante est mise à zéro.
+# La profondeur correspondante (PDARK_temp) est enregistrée.
 
 last_nonzero_vals <- sapply(1:ncol(chla_subset), function(n) {
   idx <- which(!is.na(chla_subset[, n]) & chla_subset[, n] != 0)
@@ -790,6 +929,11 @@ last_nonzero_vals <- sapply(1:ncol(chla_subset), function(n) {
     chla_subset[max(idx), n]
   }
 })
+
+# mediane des 10 dernieres profondeurs
+# Remplir les NA
+# Detecter signaux constants en bas de profil
+# Verifier que le profil est bien profond
 
 nprofile=62
 
@@ -842,7 +986,7 @@ chla <- chla_corrected
 ```{r NPQ correction}
 # Pour chaque profil de Chl-a valide (non NA):
 #     Calculer la profondeur limite de correction (depthLimit) :
-#        c'est la plus petite entre la profondeur de mélange (MLD) et la profondeur de quenching (quenchDepth)
+#        min entre la profondeur de mélange (MLD) et la profondeur de quenching (quenchDepth)
 # 
 #     Déterminer l’indice (indexDepthLimit) dans le vecteur de pression correspondant à cette profondeur limite
 # 
