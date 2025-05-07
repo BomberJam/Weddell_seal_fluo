@@ -22,12 +22,14 @@ library(terra)
 library(tidyterra)
 library(cmocean)
 library(stringr)
+library(zoo)
+library(stats)
 
 ```
 
 ## Variables
 ```{r variables}
-MAX_CHLA_DEPTH <- 200       # define depth at which to consider dark signal (CHLA "absolute zero")
+MAX_CHLA_DEPTH <- 100       # define depth at which to consider dark signal (CHLA "absolute zero")
 SURFACE_NOT_NAN <- 4:10
 
 DDU_loc=NULL
@@ -64,31 +66,31 @@ DDU_loc=as.data.frame(DDU_loc)
 ```
 
 ```{r}
-# ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
-# DATA_FOLDER <- "oceanographic_data"
-# DEPLOY_FOLDER <- "wd31"
-# DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
-# 
-# nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
-# profiles_list <- list()
-# 
-# for (nc_file in nc_files) 
-# {
-#   nc_data <- nc_open(nc_file)
-#   
-#   profiles_data <- ncvar_get(nc_data, "LIGHT")
-#   
-#   num_profiles <- dim(profiles_data)[2] 
-#   
-#   profiles_list[[basename(nc_file)]] <- num_profiles
-#   
-#   nc_close(nc_data)
-# }
-# 
-# for (file_name in names(profiles_list)) {
-#   cat("\nFichier:", file_name, "\n")
-#   cat("Nombre de profils de lumière:", profiles_list[[file_name]], "\n")
-# }
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+DEPLOY_FOLDER <- "wd10"
+DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+
+nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+profiles_list <- list()
+
+for (nc_file in nc_files)
+{
+  nc_data <- nc_open(nc_file)
+
+  profiles_data <- ncvar_get(nc_data, "LIGHT")
+
+  num_profiles <- dim(profiles_data)[2]
+
+  profiles_list[[basename(nc_file)]] <- num_profiles
+
+  nc_close(nc_data)
+}
+
+for (file_name in names(profiles_list)) {
+  cat("\nFichier:", file_name, "\n")
+  cat("Nombre de profils de lumière:", profiles_list[[file_name]], "\n")
+}
 
 ```
 
@@ -134,16 +136,21 @@ juld  <- ncvar_get(nc_data, "JULD")
 ```
 
 ```{r dataframe}
-max_depth_dataset <- 150
+max_depth_dataset <- 250
 m = 1:max_depth_dataset
-n = 5
 
 dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
 dateTime <- round(dateTime, units = "mins")  # arrondi à la minute la plus proche
 ```
 
+```{r NaColumns}
+col_na_only <- apply(light, 2, function(col) all(is.na(col)))
+
+cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
+```
+
 ## MLD
-```{r}
+```{r MLD}
 n_profiles <- ncol(sal)
 n_levels <- nrow(sal)
 
@@ -196,14 +203,13 @@ for (i in validProfiles) {
   }
 }
 
-valid_mld_indices <- which(!is.na(mld_vec))
-mld_vals <- mld_vec[valid_mld_indices]
+valid_indices <- which(!col_na_only)
+mld_vals <- mld_vec[valid_indices]
+mld_moving_median <- rollapply(mld_vals, width = 135, FUN = median, na.rm = TRUE, align = "center", partial = TRUE)
 
-mld_moving_median <- rollapply(mld_vals, width = 180, FUN = median, na.rm = TRUE, align = "center", partial = TRUE)
-
-plot(valid_mld_indices, mld_vals, pch = 4, col = "blue",
-     ylim = rev(range(mld_vals, na.rm = TRUE)), xlim = range(0,200), xlab = "Profil", ylab = "MLD (m)")
-lines(valid_mld_indices, mld_moving_median, col = "red", lwd = 2)
+plot(valid_indices, mld_vals, pch = 4, col = "blue",
+     ylim = rev(range(mld_vals, na.rm = TRUE)), xlim = range(0,150), xlab = "Profil", ylab = "MLD (m)")
+lines(valid_indices, mld_moving_median, col = "red", lwd = 2)
 
 ```
 
@@ -256,13 +262,6 @@ lat <- df_interp$lat_corr
 ```
 
 ```{r NaColumns}
-col_na_only <- apply(light, 2, function(col) all(is.na(col)))
-which(col_na_only)
-
-cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
-```
-
-```{r NaColumns}
 light_subset <- light[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_preprocess1_nonNan2 : erasing NaN profiles
 lat_subset <- lat[!col_na_only]
 lon_subset <- lon[!col_na_only]
@@ -285,50 +284,95 @@ plot(
 
 axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
 ```
+```{r}
+light_subset_exp <- exp(light)
+light_subset_exp_round <- round(light_subset_exp, 4)
+```
+
 
 ```{r DarkValue}
 
-median_last10_vals <- sapply(1:ncol(light_subset), function(n) {
-  col_data <- light_subset[, n]
+correct_light_profile <- function(col_data, pres_vector, min_window = 4, alpha = 0.01) 
+{
+  # indices valides
   idx <- which(!is.na(col_data) & col_data != 0)
+  if (length(idx) < min_window) return(rep(NA, length(col_data)))
+  
+  last_non_na <- max(idx)
+  first_non_na <- min(idx)
 
-  if (length(idx) >= 1) {
-    # Prendre les indices des 10 dernières valeurs
-    last10_idx <- tail(idx, 10)
-    median(col_data[last10_idx], na.rm = TRUE)
-  } else {
-    NA
+  # balayage depuis la surface vers le fond
+  dark_idx <- last_non_na
+  for (j in seq(first_non_na, last_non_na - (min_window - 1))) 
+  {
+    window <- col_data[j:last_non_na]
+    if (length(window) >= min_window) 
+    {
+      test_result <- tryCatch(shapiro.test(window), error = function(e) list(p.value = 0))
+      if (!is.null(test_result$p.value) && test_result$p.value > alpha) 
+      {
+        dark_idx <- j
+        break
+      }
+    }
   }
+
+  # dark value = médiane des valeurs identifiées comme dark noise
+  dark_vals <- col_data[dark_idx:last_non_na]
+  dark_val <- median(dark_vals, na.rm = TRUE)
+  dark_val <- round(dark_val, 4)
+  
+  # cat(paste("dark_val : ", dark_val, "\n\n"))
+
+  # correction du profil
+  corrected <- col_data - dark_val
+
+  # valeurs négatives à NA
+  corrected[corrected <= 0] <- NA
+  
+  # interpolation linéaire
+  if (sum(!is.na(corrected)) >= 2) {
+    corrected <- na.approx(corrected, x = pres_vector, na.rm = FALSE)
+  }
+  return(corrected)
+}
+
+pres_vector <- pres[, 1]
+light_corrected <- apply(light_subset_exp_round, 2, function(col) correct_light_profile(col, pres_vector))
+light_corrected_log <- log(pmax(light_corrected, 1e-10))
+
+```
+
+## Profondeur de quenching basé sur le PAR 15
+```{r}
+# compute depth of quenching threshold 15 umol.m-2.s-1 (xing et al. 2018)
+quenchDepth <- apply(light_corrected, 2, function(col) {
+  idx <- tail(which(col > 15), 1)
+  if (length(idx) == 0) return(NA) else return(idx)
 })
-
-light_corrected <- sweep(light_subset, 2, median_last10_vals, FUN = "-")
-
-# Plot only one of the 150
-plot(light_subset[1:MAX_CHLA_DEPTH, n], pres[1:MAX_CHLA_DEPTH, n], type = "l", col = "blue",
-     ylim = rev(range(pres[1:200, n], na.rm = TRUE)),
-     xlim = c(-10,15),
-     xlab = "Light", ylab = "Depth", main = paste("Profil", n, "- Dark value: ", last_nonzero_vals[n]))
-
-lines(light_corrected[1:MAX_CHLA_DEPTH, n], pres[1:MAX_CHLA_DEPTH, n], col = "red")
-
-legend("bottomright", legend = c("Original", "Corrected"),
-       col = c("blue", "red"), lty = 1, bty = "n")
 ```
 
 ```{r}
 
-light_non_log <- exp(light_corrected)
-par15_depths <- rep(NA, ncol(light_non_log))  # vecteur pour stocker les profondeurs
+id_profile = 4
 
-for (i in 1:ncol(light_non_log)) {
-  below15 <- which(light_non_log[, i] < 15)
-  if (length(below15) > 0) {
-    # On prend la première profondeur où light < 15
-    par15_depths[i] <- pres[min(below15), i]
-  }
-}
+plot(light_subset_exp_round[1:MAX_CHLA_DEPTH, id_profile], pres[1:MAX_CHLA_DEPTH, id_profile], type = "l", col = "blue",
+     ylim = rev(range(pres[1:MAX_CHLA_DEPTH, id_profile])), xlim = c(-0.005,5),
+     xlab = "Light (µmol/m²/sec)", ylab = "Depth (m)")
 
-matplot(light[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
+lines(light_corrected[1:MAX_CHLA_DEPTH, id_profile], pres[1:MAX_CHLA_DEPTH, id_profile], col = "red")
+legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
+
+abline(h = quenchDepth[id_profile], col = "cyan", lty = 2)
+abline(h = mld_vals[id_profile], col = "purple", lty = 2)
+
+legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
+
+
+```
+
+```{r}
+matplot(light_subset_exp[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
@@ -337,7 +381,7 @@ matplot(light[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
         main = paste0("Light profiles : ", SEAL_NAME))
 grid()
 
-matplot(light_corrected, pres[1:MAX_CHLA_DEPTH,],
+matplot(light_corrected, pres[,1],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
@@ -346,49 +390,7 @@ matplot(light_corrected, pres[1:MAX_CHLA_DEPTH,],
         main = paste0("Light profiles corrected : ", SEAL_NAME))
 grid()
 
-abline(h = par15_depths, col = "red", lty = 2)
-
-light <- light_corrected
 ```
-
-## Couche Eupho
-```{r}
-# pas utile pour le moment (attention code peut etre faux)
-
-# # Calculer Zeu : première profondeur où la lumière < 1% (log-scale)
-# zeuDep_temp <- apply(light, 2, function(col) {
-#   idx <- which(col < -log(100))[1]  # première position vraie
-#   if (is.na(idx)) NA else idx       # si rien trouvé, mettre NA
-# })
-# 
-# # Remplacer les 0 (si jamais) par NA (équivalent MATLAB)
-# zeuDep_temp[zeuDep_temp == 0] <- NA
-# 
-# # Stocker dans la structure lightData
-# Zeu <- zeuDep_temp
-
-```
-
-## Profondeur de quenching basé sur le PAR 15
-```{r}
-quenchDep_temp <- apply(light, 2, function(col) {
-  idx <- tail(which(col > 15), 1)
-  if (length(idx) == 0) return(NA) else return(idx)
-})
-quenchDepth <- quenchDep_temp
-
-# %% compute depth of quenching threshold 15 umol.m-2.s-1 (xing et al. 2018)
-# 
-# % lightData.quenchDepth contains depth of quenching threshold at 15 umol.m-2.s-1
-# % (xing et al. 2018)
-# 
-# quenchDep_temp = find_ndim(L_adNonLogRegDk > 15, 1, 'last').' ;
-# quenchDep_temp(quenchDep_temp == 0) = NaN ;
-# 
-# lightData.quenchDepth = quenchDep_temp ;
-
-```
-
 ```{r SaveAndClassifyLightProfiles, echo=FALSE}
 
 dir_standard = "profils_light_standard"
@@ -396,11 +398,11 @@ dir_atypique = "profils_light_atypique"
 dir.create(dir_standard, showWarnings = FALSE)
 dir.create(dir_atypique, showWarnings = FALSE)
 
-nlight = ncol(light)
+nlight = ncol(light_subset_exp_round)
 
 for (i in 1:nlight) {
-  profil_light <- light[, i]
-  profil_pres <- pres_subset[, i]
+  profil_light <- light_subset_exp_round[, i]
+  profil_pres <- pres_vector
   
   delta_light <- profil_light - profil_light[1]
 
@@ -423,13 +425,18 @@ for (i in 1:nlight) {
        main = paste0("Profil light - Col ", i," (", format(date_subset[i], "%Y-%m-%d"), ")"))
   grid()
   
+  abline(h = quenchDepth[i], col = "cyan", lty = 2)
+  abline(h = mld_vals[i], col = "purple", lty = 2)
+
+  legend("topright", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 2, cex = 0.8, bg = "white")
+  
   dev.off()
 }
 
-cat("Classification terminée :\n")
-cat(nlight, "profils analysés\n")
-cat("->", length(list.files(dir_standard)), "profils standards dans", dir_standard, "\n")
-cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypique, "\n\n")
+# cat("Classification terminée :\n")
+# cat(nlight, "profils analysés\n")
+# cat("->", length(list.files(dir_standard)), "profils standards dans", dir_standard, "\n")
+# cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypique, "\n\n")
 
 ```
 
@@ -437,12 +444,12 @@ cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypiq
 # Layout pour 3 graphiques côte à côte
 par(mfrow = c(1, 4))
 
-n = 96
+n = 5
 
 # Plot 1: Lumière
 plot(light[m,n], pres[m,n],
      type = "l",
-     xlim = range(light[,n], na.rm = TRUE),
+     xlim = range(light_corrected[,n], na.rm = TRUE),
      ylim = rev(c(0, max_depth_dataset)),
      xlab = "Light (µmol/m²/s)",
      ylab = "Depth (m)")
@@ -475,14 +482,14 @@ plot(chla[m,n], pres[m,n],
      ylab = "")
 grid()
 
-mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light), " (", format(date_subset[n], "%Y-%m-%d"), ")"), side = 3, line = -2, outer = TRUE)
+mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light_corrected), " (", format(date_subset[n], "%Y-%m-%d"), ")"), side = 3, line = -2, outer = TRUE)
 
 ```
 
 ```{r dataframe}
 
 depth_interval <- pres[SURFACE_NOT_NAN,1]
-light_interval <- light[SURFACE_NOT_NAN, ]
+light_interval <- light_corrected[SURFACE_NOT_NAN, ]
 
 depth_diff <- c(diff(depth_interval), 0)  
 
@@ -490,8 +497,8 @@ light_surf_avg <- apply(light_interval, 2, function(x) {
   sum(x * depth_diff, na.rm = TRUE) / sum(depth_diff, na.rm = TRUE)
 })
 
-light_20m <- light[20, ]
-light_40m <- light[40, ]
+light_20m <- light_corrected[20, ]
+light_40m <- light_corrected[40, ]
 
 df_light <- data.frame(
   lon = lon_subset,
@@ -544,6 +551,7 @@ ggplot(df_40m_clean %>% filter(!is.na(light_40)), aes(x = lon, y = lat, color = 
   theme_minimal()
 
 ```
+
 ```{r}
 solar_angle = sunAngle(date_subset, lon_subset, lat_subset)$altitude
 solar_threshold <- -12
@@ -972,16 +980,6 @@ grid()
 
 chla <- chla_corrected
 ```
-```{r RSD}
-# # Calcul écart type et moyenne)
-#   stdChla <- sd(chla_profile, na.rm = TRUE)
-#   meanChla <- mean(chla_profile, na.rm = TRUE)
-# 
-#   # Calcul du RSD si la moyenne est non nulle
-#   if (!is.na(meanChla) && meanChla != 0) {
-#     rsd[ii_temp] <- stdChla / meanChla
-#   }
-```
 
 ```{r NPQ correction}
 # Pour chaque profil de Chl-a valide (non NA):
@@ -1060,3 +1058,44 @@ cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypiq
 
 ```
 
+## Couche Eupho + PAR 15 + RSD : le cimetiere
+```{r}
+# COUCHE EUPHO
+# pas utile pour le moment (attention code peut etre faux)
+
+# # Calculer Zeu : première profondeur où la lumière < 1% (log-scale)
+# zeuDep_temp <- apply(light, 2, function(col) {
+#   idx <- which(col < -log(100))[1]  # première position vraie
+#   if (is.na(idx)) NA else idx       # si rien trouvé, mettre NA
+# })
+# 
+# # Remplacer les 0 (si jamais) par NA (équivalent MATLAB)
+# zeuDep_temp[zeuDep_temp == 0] <- NA
+# 
+# # Stocker dans la structure lightData
+# Zeu <- zeuDep_temp
+
+
+# PAR 15
+# light_non_log <- exp(light_corrected)
+# par15_depths <- rep(NA, ncol(light_non_log))  # vecteur pour stocker les profondeurs
+# 
+# for (i in 1:ncol(light_non_log)) {
+#   below15 <- which(light_non_log[, i] < 15)
+#   if (length(below15) > 0) {
+#     # On prend la première profondeur où light < 15
+#     par15_depths[i] <- pres[min(below15), i]
+#   }
+# }
+
+# RSD
+# # Calcul écart type et moyenne)
+#   stdChla <- sd(chla_profile, na.rm = TRUE)
+#   meanChla <- mean(chla_profile, na.rm = TRUE)
+# 
+#   # Calcul du RSD si la moyenne est non nulle
+#   if (!is.na(meanChla) && meanChla != 0) {
+#     rsd[ii_temp] <- stdChla / meanChla
+#   }
+
+```
