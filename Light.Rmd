@@ -358,7 +358,7 @@ id_profile = 4
 
 plot(light_subset_exp_round[1:MAX_CHLA_DEPTH, id_profile], pres[1:MAX_CHLA_DEPTH, id_profile], type = "l", col = "blue",
      ylim = rev(range(pres[1:MAX_CHLA_DEPTH, id_profile])), xlim = c(-0.005,5),
-     xlab = "Light (µmol/m²/sec)", ylab = "Depth (m)")
+     xlab = "Light (µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",id_profile," - Original and Corrected\n", SEAL_NAME))
 
 lines(light_corrected[1:MAX_CHLA_DEPTH, id_profile], pres[1:MAX_CHLA_DEPTH, id_profile], col = "red")
 legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
@@ -422,7 +422,7 @@ for (i in 1:nlight) {
        ylim = rev(c(0, MAX_CHLA_DEPTH)),
        xlab = "Light (µmol/m²/s)",
        ylab = "Press",
-       main = paste0("Profil light - Col ", i," (", format(date_subset[i], "%Y-%m-%d"), ")"))
+       main = paste0("Light profile ",i," - Original and Corrected\n", SEAL_NAME))
   grid()
   
   abline(h = quenchDepth[i], col = "cyan", lty = 2)
@@ -931,36 +931,100 @@ axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1,
 # Si variation en profondeur < un seuil (delta_for_cstCHLA), la partie constante est mise à zéro.
 # La profondeur correspondante (PDARK_temp) est enregistrée.
 
-last_nonzero_vals <- sapply(1:ncol(chla_subset), function(n) {
-  idx <- which(!is.na(chla_subset[, n]) & chla_subset[, n] != 0)
-  if (length(idx) > 0) {
-    chla_subset[max(idx), n]
+correct_chla_profile <- function(col_data, pres_vector, prof_depth = 10, delta_for_cstCHLA = 0.01) 
+{
+  # Vérifier les données valides
+  if (all(is.na(col_data))) {
+    return(list(corrected = rep(NA, length(col_data)), 
+                dark_val = NA, 
+                PDARK_temp = NA))
   }
-})
 
-# mediane des 10 dernieres profondeurs
-# Remplir les NA
-# Detecter signaux constants en bas de profil
-# Verifier que le profil est bien profond
+  # Remplissage des NA : interpolation puis voisins les plus proches
+  col_data <- zoo::na.approx(col_data, x = pres_vector, na.rm = FALSE)
+  col_data <- zoo::na.locf(col_data, na.rm = FALSE)
+  col_data <- zoo::na.locf(col_data, fromLast = TRUE, na.rm = FALSE)
 
-nprofile=62
+  # Profondeur max atteinte (fond du profil)
+  max_depth <- max(pres_vector, na.rm = TRUE)
+  bottom_limit <- max_depth - prof_depth
 
-chla_corrected <- sweep(chla_subset, 2, last_nonzero_vals, FUN = "-") # dark-value ? Not sure mhmhmhm
+  # Indices correspondant aux 10 derniers mètres
+  idx_bottom <- which(pres_vector >= bottom_limit)
+  if (length(idx_bottom) == 0) {
+    return(list(corrected = rep(NA, length(col_data)), 
+                dark_val = NA, 
+                PDARK_temp = NA))
+  }
+
+  # Médiane des 10 derniers mètres = valeur d'offset (dark)
+  dark_val <- median(col_data[idx_bottom], na.rm = TRUE)
+  dark_val <- round(dark_val, 4)
+
+  # Soustraction du dark offset
+  corrected <- col_data - dark_val
+
+  # Remplacer valeurs négatives par 0
+  corrected[corrected < 0] <- 0
+
+  # Détection de signal constant en profondeur (artefact)
+  PDARK_temp <- NA
+  first_non_na <- which(!is.na(corrected))[1]
+  last_non_na <- tail(which(!is.na(corrected)), 1)
+
+  if (!is.na(first_non_na) && !is.na(last_non_na) && (last_non_na - first_non_na + 1) >= 2) {
+    for (j in first_non_na:(last_non_na - 1)) {
+      window <- corrected[j:last_non_na]
+      amplitude <- max(window, na.rm = TRUE)
+      if (amplitude <= delta_for_cstCHLA) {
+        # On a trouvé un signal constant à partir de j+1
+        ind_dark_temp <- j + 1
+        corrected[ind_dark_temp:last_non_na] <- 0
+        PDARK_temp <- pres_vector[ind_dark_temp]
+        break
+      }
+    }
+  }
+
+  return(list(corrected = corrected, 
+              dark_val = dark_val, 
+              PDARK_temp = PDARK_temp))
+}
+
+
+pres_vector <- pres[, 1]
+result_list <- lapply(1:ncol(chla), function(i) correct_chla_profile(chla[, i], pres_vector))
+
+```
+
+```{r}
+# Extraire les résultats
+chla_corrected <- sapply(result_list, function(x) x$corrected)   # matrice de profils corrigés
+dark_vals <- sapply(result_list, function(x) x$dark_val)         # vecteur
+PDARK_vals <- sapply(result_list, function(x) x$PDARK_temp)      # vecteur
+
+# Et on peut tout sauvegarder dans une structure de type data.frame
+chlaData <- data.frame(
+  darkValProfile = dark_vals,
+  darkDepth = PDARK_vals
+)
+
+nprofile=12
 
 # Plot only one of the 150
-plot(chla_subset[1:MAX_CHLA_DEPTH, nprofile], pres[1:MAX_CHLA_DEPTH, nprofile], type = "l", col = "blue",
-     ylim = rev(range(pres[1:200, nprofile], na.rm = TRUE)),
-     xlim = c(-5,20),
-     xlab = "Chl-a", ylab = "Depth", main = paste("Profil", nprofile, "- Dark value: ", last_nonzero_vals[nprofile]))
+plot(chla[1:MAX_CHLA_DEPTH, nprofile], pres_vector[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
+     ylim = rev(range(pres_vector[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
+     xlim = c(0,3),
+     xlab = "Chl-a", ylab = "Depth", main = paste("Profil", nprofile, "-", SEAL_NAME))
 
-lines(chla_corrected[1:MAX_CHLA_DEPTH, nprofile], pres[1:MAX_CHLA_DEPTH, nprofile], col = "red")
+lines(chla_corrected[1:MAX_CHLA_DEPTH, nprofile], pres_vector[1:MAX_CHLA_DEPTH], col = "red")
 
 legend("bottomright", legend = c("Original", "Corrected"),
        col = c("blue", "red"), lty = 1, bty = "n")
 ```
 
 ```{r}
-matplot(chla[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
+matplot(chla[1:MAX_CHLA_DEPTH,], pres_vector[1:MAX_CHLA_DEPTH],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
@@ -969,7 +1033,7 @@ matplot(chla[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
         main = paste0("Chl-a profiles : ", SEAL_NAME))
 grid()
 
-matplot(chla_corrected, pres[1:MAX_CHLA_DEPTH,],
+matplot(chla_corrected[1:MAX_CHLA_DEPTH,], pres_vector[1:MAX_CHLA_DEPTH],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
