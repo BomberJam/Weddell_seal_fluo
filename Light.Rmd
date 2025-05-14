@@ -1,16 +1,15 @@
 ---
-title: "00_fluo_test"
+title: "Code Light / Fluo"
 output:
   html_document:
     df_print: paged
-date: "2025-04-10"
+date: "12-05-2025"
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Packages
-```{r packages}
+```{r packages, include=FALSE}
 library(ncdf4) 
 library(raster) 
 library(ggplot2)
@@ -27,7 +26,7 @@ library(stats)
 
 ```
 
-## Variables
+<h2>Global Variables</h2>
 ```{r variables}
 MAX_CHLA_DEPTH <- 175       # define depth at which to consider dark signal (CHLA "absolute zero")
 SURFACE_NOT_NAN <- 4:10
@@ -39,32 +38,34 @@ DDU_loc=as.data.frame(DDU_loc)
 
 ```
 
+<h2>Metadata analysis</h2>
+<h4>Date interval for each individual</h4>
 ```{r}
-# ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
-# DATA_FOLDER <- "oceanographic_data"
-# DEPLOY_FOLDER <- "wd31"
-# DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
-# 
-# nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
-# ranges_list <- list()
-# 
-# for (nc_file in nc_files) {
-#   nc_data <- nc_open(nc_file)
-#   juld <- ncvar_get(nc_data, "JULD")
-# 
-#   dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
-#   dateTime <- round(dateTime, units = "mins")
-# 
-#   ranges_list[[basename(nc_file)]] <- range(dateTime, na.rm = TRUE)
-#   nc_close(nc_data)
-# }
-# 
-# for (file_name in names(ranges_list)) {
-#   cat("\nFichier:", file_name, "\n")
-#   print(ranges_list[[file_name]])
-# }
-```
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+DEPLOY_FOLDER <- "wd10"
+DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
 
+nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+ranges_list <- list()
+
+for (nc_file in nc_files) {
+  nc_data <- nc_open(nc_file)
+  juld <- ncvar_get(nc_data, "JULD")
+
+  dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
+  dateTime <- round(dateTime, units = "mins")
+
+  ranges_list[[basename(nc_file)]] <- range(dateTime, na.rm = TRUE)
+  nc_close(nc_data)
+}
+
+for (file_name in names(ranges_list)) {
+  cat("\nFichier:", file_name, "\n")
+  print(ranges_list[[file_name]])
+}
+```
+<h4>Number of profiles per individual</h4>
 ```{r}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 DATA_FOLDER <- "oceanographic_data"
@@ -94,7 +95,8 @@ for (file_name in names(profiles_list)) {
 
 ```
 
-## Paths
+<h2>Paths and NetCDF extraction</h2>
+<h4>Paths</h4>
 ```{r paths}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
@@ -121,7 +123,7 @@ AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
 AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 ```
 
-## NetCfd code
+<h4>NetCDF Extract</h4>
 ```{r nc-code}
 nc_data <- nc_open(NC_PATH)
 # print(nc_data)
@@ -135,85 +137,19 @@ pres  <- ncvar_get(nc_data, "PRES_ADJUSTED")
 juld  <- ncvar_get(nc_data, "JULD")
 ```
 
+<h2>Date and coordinates correction</h2>
+<h4>Date formatting</h4>
 ```{r dataframe}
-max_depth_dataset <- 250
-m = 1:max_depth_dataset
+# max_depth_dataset <- 250
+# m = 1:max_depth_dataset
+
+pres_vec <- pres[, 1]
 
 dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
 dateTime <- round(dateTime, units = "mins")  # arrondi à la minute la plus proche
 ```
 
-```{r NaColumns}
-col_na_only <- apply(light, 2, function(col) all(is.na(col)))
-
-cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
-```
-
-## MLD
-```{r MLD}
-n_profiles <- ncol(sal)
-n_levels <- nrow(sal)
-
-sigma0_mat <- matrix(NA, nrow = n_levels, ncol = n_profiles)
-mld_vec <- rep(NA, n_profiles)
-densThreshold <- 0.03
-refDepth <- 10
-minProfileStartDepth <- 20
-
-profileStartDepth <- rep(NA, n_profiles)
-for (i in 1:n_profiles) {
-  firstGood <- which(!is.na(temp[, i]) & !is.na(pres[, i]) & !is.na(sal[, i]))[1]
-  if (!is.na(firstGood)) {
-    profileStartDepth[i] <- pres[firstGood, i]
-  }
-}
-validProfiles <- which(profileStartDepth <= minProfileStartDepth)
-
-for (i in validProfiles) {
-  S <- sal[, i]
-  T <- temp[, i]
-  P <- pres[, i]
-
-  good <- !is.na(S) & !is.na(T) & !is.na(P)
-
-  if (sum(good) > 5) {
-    ctd <- as.ctd(salinity = S[good], temperature = T[good], pressure = P[good])
-    sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
-
-    full_sigma0 <- rep(NA, n_levels)
-    full_sigma0[good] <- sigma0
-    sigma0_mat[, i] <- full_sigma0
-
-    # Trouver l'indice de référence (premier >= 10 m)
-    refIdx <- which(ctd@data$pressure >= refDepth)[1]
-
-    if (!is.na(refIdx)) {
-      refSigma0 <- sigma0[refIdx]
-
-      # Différence de densité sur tous les niveaux valides
-      deltaSigma <- full_sigma0 - refSigma0
-
-      # Trouver l'indice où le seuil est dépassé au-delà de 10 m
-      mld_idx <- which(deltaSigma > densThreshold & P > refDepth)[1]
-
-      if (!is.na(mld_idx)) {
-        mld_vec[i] <- P[mld_idx]
-      }
-    }
-  }
-}
-
-valid_indices <- which(!col_na_only)
-mld_vals <- mld_vec[valid_indices]
-mld_moving_median <- rollapply(mld_vals, width = 135, FUN = median, na.rm = TRUE, align = "center", partial = TRUE)
-
-plot(valid_indices, mld_vals, pch = 4, col = "blue",
-     ylim = rev(range(mld_vals, na.rm = TRUE)), xlim = range(0,150), xlab = "Profil", ylab = "MLD (m)")
-lines(valid_indices, mld_moving_median, col = "red", lwd = 2)
-
-```
-
-## Long Lat Light
+<h4>Correcting longitude and latitude</h4>
 ```{r corrected lon lat}
 diag <- read.csv("diag_2017-2024_forclaude_07apr24.csv", stringsAsFactors = FALSE)
 diag$date <- as.POSIXct(diag$date, format="%Y-%m-%d %H:%M")
@@ -254,42 +190,153 @@ ggplot() +
     y = "Latitude"
   ) +
   theme_minimal()
-```
 
-```{r}
 lon <- df_interp$lon_corr
 lat <- df_interp$lat_corr
 ```
 
-```{r NaColumns}
-light_subset <- light[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_preprocess1_nonNan2 : erasing NaN profiles
-lat_subset <- lat[!col_na_only]
-lon_subset <- lon[!col_na_only]
-date_subset <- dateTime[!col_na_only]
-pres_subset <- pres [1:MAX_CHLA_DEPTH, !col_na_only]
+<h2>Computing Mixed Layer Depth</h2>
+```{r MLD}
+n_profiles <- ncol(sal)
+n_levels <- nrow(sal)
 
-total_light <- colSums(light_subset, na.rm = TRUE)
-profil_names <- as.character(seq_along(total_light))
+sigma0_mat <- matrix(NA, nrow = n_levels, ncol = n_profiles)
+mld_vec <- rep(NA, n_profiles)
+densThreshold <- 0.03
+refDepth <- 10
+minProfileStartDepth <- 20
 
-plot(
-  total_light,
-  type = "b",                     
-  pch = 18,                        
-  col = "blue",
-  xlab = "Profil n°",
-  ylab = "Total lumière (µmol/m²/s)",
-  main = paste0("Lumière totale par profile : ", SEAL_NAME),
-  xaxt = "n"                       
+# Identifie la première profondeur valide (T S P non NA).
+# Sélectionne uniquement les profils dont la première donnée valable est plus proche de la surface que le seuil défini par minProfileStartDepth.
+profileStartDepth <- rep(NA, n_profiles)
+for (i in 1:n_profiles) {
+  firstGood <- which(!is.na(temp[, i]) & !is.na(sal[, i]))[1]
+  if (!is.na(firstGood)) {
+    profileStartDepth[i] <- pres_vec[firstGood]
+  }
+}
+# mon premier point est au moins à 20m
+validProfiles <- which(profileStartDepth <= minProfileStartDepth)
+
+for (i in validProfiles) {
+  S <- sal[, i]
+  T <- temp[, i]
+  P <- pres_vec[i]
+
+  good <- !is.na(S) & !is.na(T) & !is.na(P)
+
+  # Si pas 5 profondeurs, on ne calcule pas 
+  if (sum(good) > 5) 
+  {
+    # densité potentielle
+    ctd <- as.ctd(salinity = S[good], temperature = T[good], pressure = P[good])
+    sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
+
+    full_sigma0 <- rep(NA, n_levels)
+    full_sigma0[good] <- sigma0
+    sigma0_mat[, i] <- full_sigma0
+
+    # Trouve l'indice de référence (premier >= 10 m)
+    refIdx <- which(ctd@data$pressure >= refDepth)[1]
+
+    if (!is.na(refIdx)) {
+      refSigma0 <- sigma0[refIdx]
+
+      # Différence de densité sur tous les niveaux valides
+      deltaSigma <- full_sigma0 - refSigma0
+
+      # Trouve l'indice où le seuil est dépassé au-delà de 10 m
+      mld_idx <- which(deltaSigma > densThreshold & P > refDepth)[1]
+
+      if (!is.na(mld_idx)) {
+        mld_vec[i] <- P[mld_idx]
+      }
+    }
+  }
+}
+
+# plots
+valid_indices <- which(!col_na_only)
+mld_vals <- mld_vec[valid_indices]
+mld_moving_median <- rollapply(mld_vals, width = 135, FUN = median, na.rm = TRUE, align = "center", partial = TRUE)
+
+plot(valid_indices, mld_vals, pch = 4, col = "blue",
+     ylim = rev(range(mld_vals, na.rm = TRUE)), xlim = range(0,20), xlab = "Profil", ylab = "MLD (m)")
+lines(valid_indices, mld_moving_median, col = "red", lwd = 2)
+
+```
+
+<h4> Light and fluo profiles, not corrected </h4>
+```{r}
+idprofile <- 13
+
+df_L_F <- data.frame(
+  depth = pres_vec[1:MAX_CHLA_DEPTH],
+  chla = chla[1:MAX_CHLA_DEPTH,idprofile],
+  light = light[1:MAX_CHLA_DEPTH,idprofile]
 )
 
-axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
-```
-```{r}
-light_subset_exp <- exp(light)
-light_subset_exp_round <- round(light_subset_exp, 4)
-```
+# long format
+df_long <- df_L_F %>%
+  pivot_longer(cols = c("chla", "light"), names_to = "variable", values_to = "value")
+
+# Tracé avec ggplot
+ggplot(df_long, aes(x = value, y = depth, color = variable)) +
+  geom_line(size = 1) +
+  scale_y_reverse() +  # profondeur vers le bas
+  labs(x = "Valeur", y = "Profondeur (m)", color = "Variable") +
+  theme_minimal()
+
+# library(ggplot2)
+# library(dplyr)
+# 
+# idprofile <- 10
+# 
+# # Base commune
+# depth <- pres_vec[1:MAX_CHLA_DEPTH]
+# chla_vals <- chla[1:MAX_CHLA_DEPTH, idprofile]
+# light_vals <- light[1:MAX_CHLA_DEPTH, idprofile]
+# 
+# # Échelle de conversion : on ramène "light" sur une échelle comparable visuellement
+# light_scaled <- light_vals / max(light_vals, na.rm = TRUE)
+# chla_scaled <- chla_vals / max(chla_vals, na.rm = TRUE)
+# 
+# df_plot <- data.frame(
+#   depth = depth,
+#   chla = chla_vals,
+#   light = light_vals,
+#   light_scaled = light_scaled,
+#   chla_scaled = chla_scaled
+# )
+# 
+# ggplot(df_plot, aes(y = depth)) +
+#   geom_line(aes(x = chla_scaled), color = "green", size = 1) +
+#   geom_line(aes(x = light_scaled), color = "black", size = 1) +
+#   scale_y_reverse() +
+#   scale_x_continuous(
+#     name = "Chlorophylle (mg/m³)",
+#     sec.axis = sec_axis(~ . , name = "Lumière (uE/m²/s)")  # même échelle, visuellement différent
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     axis.title.x.top = element_text(color = "black"),
+#     axis.title.x.bottom = element_text(color = "green"),
+#     axis.text.x.top = element_text(color = "black"),
+#     axis.text.x.bottom = element_text(color = "green")
+#   )
 
 
+```
+
+<h2>LIGHT</h2>
+<h4>Estimating the number of empty light profiles</h4>
+```{r NaColumns}
+col_na_only <- apply(light, 2, function(col) all(is.na(col)))
+
+cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
+```
+
+<h4>Computing Dark value for light profile</h4>
 ```{r DarkValue}
 
 correct_light_profile <- function(col_data, pres_vec, min_window = 4, alpha = 0.01) 
@@ -301,16 +348,18 @@ correct_light_profile <- function(col_data, pres_vec, min_window = 4, alpha = 0.
   last_non_na <- max(idx)
   first_non_na <- min(idx)
 
-  # balayage depuis la surface vers le fond
+  # balayage depuis la surface vers le fond pour chaque valeur
   dark_idx <- last_non_na
   for (j in seq(first_non_na, last_non_na - (min_window - 1))) 
   {
     window <- col_data[j:last_non_na]
     if (length(window) >= min_window) 
     {
+      # p.value
       test_result <- tryCatch(shapiro.test(window), error = function(e) list(p.value = 0))
       if (!is.null(test_result$p.value) && test_result$p.value > alpha) 
       {
+        # si significtaive entre la valeur non nulle et le fond, à la premiere on prend cette indice là
         dark_idx <- j
         break
       }
@@ -337,14 +386,17 @@ correct_light_profile <- function(col_data, pres_vec, min_window = 4, alpha = 0.
   return(corrected)
 }
 
-pres_vec <- pres[, 1]
+# exp aux valeurs de lumière (en log) car pas de calculs en log (incorrect)
+light_subset_exp <- exp(light)
+light_subset_exp_round <- round(light_subset_exp, 4)
+
 light_corrected <- apply(light_subset_exp_round, 2, function(col) correct_light_profile(col, pres_vec))
 light_corrected_log <- log(pmax(light_corrected, 1e-10))
 
 ```
 
-## Profondeur de quenching basé sur le PAR 15
-```{r}
+<h4>Quenching depth, based on PAR15</h4>
+```{r Quenching depth}
 # compute depth of quenching threshold 15 umol.m-2.s-1 (xing et al. 2018)
 quenchDepth_vec <- apply(light_corrected, 2, function(col) {
   idx <- tail(which(col > 15), 1)
@@ -352,15 +404,16 @@ quenchDepth_vec <- apply(light_corrected, 2, function(col) {
 })
 ```
 
-```{r}
+<h4>Plotting one light profile, before and after dark value correction</h4>
+```{r LightProfilePlot}
 
 id_profile = 12
 
-plot(light_subset_exp_round[1:MAX_CHLA_DEPTH, id_profile], pres[1:MAX_CHLA_DEPTH, id_profile], type = "l", col = "blue",
-     ylim = rev(range(pres[1:MAX_CHLA_DEPTH, id_profile])), xlim = c(0,0.005),
+plot(light_subset_exp_round[1:MAX_CHLA_DEPTH, id_profile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
+     ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])), xlim = c(0,0.005),
      xlab = "Light (µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",id_profile," - Original and Corrected\n", SEAL_NAME))
 
-lines(light_corrected[1:MAX_CHLA_DEPTH, id_profile], pres[1:MAX_CHLA_DEPTH, id_profile], col = "red")
+lines(light_corrected[1:MAX_CHLA_DEPTH, id_profile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
 legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
 
 abline(h = quenchDepth_vec[id_profile], col = "cyan", lty = 2)
@@ -371,8 +424,9 @@ legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purp
 
 ```
 
-```{r}
-matplot(light_subset_exp[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
+<h4>Plotting all light profiles, before and after dark value correction</h4>
+```{r PlotAllProfiles-original&Corrected}
+matplot(light_subset_exp[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
@@ -381,7 +435,7 @@ matplot(light_subset_exp[1:MAX_CHLA_DEPTH,], pres[1:MAX_CHLA_DEPTH,],
         main = paste0("Light profiles : ", SEAL_NAME))
 grid()
 
-matplot(light_corrected, pres[,1],
+matplot(light_corrected[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
@@ -391,17 +445,39 @@ matplot(light_corrected, pres[,1],
 grid()
 
 ```
-```{r SaveAndClassifyLightProfiles, echo=FALSE}
+<h4>Total light for each profile (not corrected). May be better to plot this after data correction.</h4>
+```{r Total-Light}
+light_subset <- light_corrected[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_preprocess1_nonNan2 : erasing NaN profiles
+
+total_light <- colSums(light_subset, na.rm = TRUE)
+profil_names <- as.character(seq_along(total_light))
+
+plot(
+  total_light,
+  type = "b",                     
+  pch = 18,                        
+  col = "blue",
+  xlab = "Profil n°",
+  ylab = "Total lumière (µmol/m²/s)",
+  main = paste0("Lumière totale par profile : ", SEAL_NAME),
+  xaxt = "n"                       
+)
+
+# axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
+```
+
+<h4>Saving and classifying light profiles (condition does not seem strong enough)<h4>
+```{r SaveAndClassifyLightProfiles}
 
 dir_standard = "profils_light_standard"
 dir_atypique = "profils_light_atypique"
 dir.create(dir_standard, showWarnings = FALSE)
 dir.create(dir_atypique, showWarnings = FALSE)
 
-nlight = ncol(light_subset_exp_round)
+nlight = ncol(light_corrected)
 
 for (i in 1:nlight) {
-  profil_light <- light_subset_exp_round[, i]
+  profil_light <- light_corrected[, i]
   profil_pres <- pres_vec
   
   delta_light <- profil_light - profil_light[1]
@@ -440,447 +516,8 @@ for (i in 1:nlight) {
 
 ```
 
-```{r PlotOneProfile}
-# Layout pour 3 graphiques côte à côte
-par(mfrow = c(1, 4))
-
-n = 5
-
-# Plot 1: Lumière
-plot(light[,n], pres_vec,
-     type = "l",
-     xlim = range(light_corrected[,n], na.rm = TRUE),
-     ylim = rev(c(0, max_depth_dataset)),
-     xlab = "Light (µmol/m²/s)",
-     ylab = "Depth (m)")
-grid()
-
-# Plot 2: Température
-plot(temp[,n], pres_vec,
-     type = "l",
-     xlab = "Temperature (°C)",
-     xlim = range(temp[,n], na.rm = TRUE),
-     ylim = rev(c(0, max_depth_dataset)),
-     ylab = "")
-grid()
-
-# Plot 3: Salinité
-plot(sal[,n], pres_vec,
-     type = "l",
-     xlab = "Salinity",
-     xlim = range(sal[,n], na.rm = TRUE),
-     ylim = rev(c(0, max_depth_dataset)),
-     ylab = "")
-grid()
-
-# Plot 4: Chla
-plot(chla[,n], pres_vec,
-     type = "l",
-     xlab = "CHLA (fluo)",
-     xlim = c(-10, 10),
-     ylim = rev(c(0, max_depth_dataset)),
-     ylab = "")
-grid()
-
-mtext(paste0(SEAL_NAME, " : ", n, "/", ncol(light_corrected), " (", format(date_subset[n], "%Y-%m-%d"), ")"), side = 3, line = -2, outer = TRUE)
-
-```
-
-```{r dataframe}
-
-depth_interval <- pres[SURFACE_NOT_NAN,1]
-light_interval <- light_corrected[SURFACE_NOT_NAN, ]
-
-depth_diff <- c(diff(depth_interval), 0)  
-
-light_surf_avg <- apply(light_interval, 2, function(x) {
-  sum(x * depth_diff, na.rm = TRUE) / sum(depth_diff, na.rm = TRUE)
-})
-
-light_20m <- light_corrected[20, ]
-light_40m <- light_corrected[40, ]
-
-df_light <- data.frame(
-  lon = lon_subset,
-  lat = lat_subset,
-  date = date_subset,
-  light_surf = light_surf_avg,
-  light_20 = light_20m,
-  light_40 = light_40m
-)
-
-df_10m_clean <- df_light %>% filter(!is.na(light_surf))
-df_20m_clean <- df_light %>% filter(!is.na(light_20))
-df_40m_clean <- df_light %>% filter(!is.na(light_40))
-
-n_profiles_surf <- length(df_10m_clean$light_surf)
-n_profiles_20 <- length(df_20m_clean$light_20)
-n_profiles_40 <- length(df_40m_clean$light_40)
-
-ggplot(df_10m_clean, aes(x = lon, y = lat, color = light_surf)) +
-  geom_point(size = 2) +
-  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
-  labs(
-    title = paste0(n_profiles_surf," light profiles (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7],"m deep)"),
-    x = "Longitude",
-    y = "Latitude",
-    color = "Light\nln(µmol/m²/s)"
-  ) +
-  theme_minimal()
-
-ggplot(df_20m_clean, aes(x = lon, y = lat, color = light_20)) +
-  geom_point(size = 2) +
-  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
-  labs(
-    title = paste0(n_profiles_20," light profiles (", 20,"m deep)"),
-    x = "Longitude",
-    y = "Latitude",
-    color = "Light\nln(µmol/m²/s)"
-  ) +
-  theme_minimal()
-
-ggplot(df_40m_clean %>% filter(!is.na(light_40)), aes(x = lon, y = lat, color = light_40)) +
-  geom_point(size = 2) +
-  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
-  labs(
-    title = paste0(n_profiles_40, " light profiles (", 40, "m deep)"),
-    x = "Longitude",
-    y = "Latitude",
-    color = "Light\nln(µmol/m²/s)"
-  ) +
-  theme_minimal()
-
-```
-
-```{r}
-solar_angle = sunAngle(date_subset, lon_subset, lat_subset)$altitude
-solar_threshold <- -12
-
-# tranche de 0.1 : 10 - 0.5 : 2 - 0.05 : 20
-lat_bin <- floor(lat_subset * 20) / 20
-
-df_solar <- data.frame(
-  date = date_subset,
-  lat = lat_subset,
-  lat_bin = lat_bin,
-  lon = lon_subset,
-  solar_angle = solar_angle,
-  light = light_surf_avg
-)
-
-df_solar <- df_solar %>%
-  mutate(period = case_when(
-    solar_angle >= 0 ~ "Day",
-    solar_angle < 0 & solar_angle > solar_threshold ~ "Twilight",
-    solar_angle <= solar_threshold ~ "Night"
-  ))
-
-nPeriod_by_lat <- df_solar %>%
-  group_by(lat_bin, period) %>%
-  summarise(n = n(), .groups = "drop")
-
-ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
-  geom_point() +
-  facet_wrap(~lat_bin, scales = "fixed") +
-  coord_cartesian(ylim = c(-40, 40)) +
-  labs(title = "Solar Angle by Latitude Bin",x = "Date",y = "Solar Angle (°)") +
-  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
-  theme_minimal()
-
-
-ggplot(df_solar, aes(x = date, y = light, color = period)) +
-  geom_point() +
-  facet_wrap(~lat_bin, scales = "free_y") +
-  coord_cartesian(ylim = c(-5, 15)) +
-  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7], "m deep) by Latitude Bin"), x = "Date", y = "ln(µmol/m²/sec)") +
-  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
-  theme_minimal()
-
-
-```
-
-```{r LightThroughTime}
-
-nPeriod = df_solar %>%  count(period)
-
-cat("Number of Day values :", nPeriod$n[1], "\n")
-cat("Number of Night values :", nPeriod$n[2], "\n")
-cat("Number of Twilight values :", nPeriod$n[3], "\n")
-
-ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
-  geom_point() +
-  labs(title = "Solar Angle",
-       x = "Date", y = "Solar Angle (°)") +
-  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
-  theme_minimal()
-
-vline_dates <- as.POSIXct(c("2019-02-20 01:12:00", "2019-03-21 00:46:00", "2019-04-19 07:30:00"))
-
-ggplot(df_solar, aes(x = date, y = light, color = period)) +
-  geom_point() +
-  # geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
-  # annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "20/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  # annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  # annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
-  labs(
-    title = paste0("Light (", SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[7], "m deep)"),
-    x = "Date", y = "ln(µmol/m²/sec)"
-  ) +
-  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
-  theme_minimal()
-```
-```{r}
-df_solar$lon <- lon_subset
-df_solar$lat <- lat_subset
-
-lon_center <-  DDU_loc$lon 
-lat_center <-  DDU_loc$lat
-
-df_solar <- df_solar %>%
-  mutate(zone = case_when(
-    lon <= lon_center & lat >= lat_center ~ "Nord-Ouest",
-    lon > lon_center & lat >= lat_center ~ "Nord-Est",
-    lon <= lon_center & lat < lat_center ~ "Sud-Ouest",
-    lon > lon_center & lat < lat_center ~ "Sud-Est"
-  ))
-
-ggplot(df_solar, aes(x = lon, y = lat, color = zone, shape = period)) +
-  geom_point(size = 3, alpha = 0.8) +
-  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # croix rouge
-  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # étiquette
-  labs(title = "Zones (couleur) et période jour/nuit/crépuscule (forme)", x = "Longitude", y = "Latitude") +
-  scale_color_manual(values = c("Nord-Ouest" = "darkorange", "Nord-Est" = "purple", "Sud-Ouest" = "blue", "Sud-Est" = "darkgreen")) +
-  scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
-  theme_minimal()
-
-```
-
-```{r}
-df_solar <- df_solar %>%
-  mutate(distance_to_center = sqrt((lon - lon_center)^2 + (lat - lat_center)^2))
-
-df_solar <- df_solar %>%
-  mutate(distance_group = case_when(
-    distance_to_center < 0.05 ~ "Centre",
-    distance_to_center < 0.15 ~ "Périphérie proche",
-    TRUE ~ "Périphérie lointaine"
-  ))
-
-ggplot(df_solar, aes(x = lon, y = lat, color = distance_group, shape = period)) +
-  geom_point(size = 2, alpha = 0.8) +
-  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # croix rouge
-  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # étiquette
-  labs(title = "", x = "Longitude", y = "Latitude") + scale_color_manual(values = c("Centre" = "firebrick", "Périphérie proche" = "goldenrod", "Périphérie lointaine" = "steelblue")) +
-  scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
-  theme_minimal()
-
-```
-
-```{r extract Suspicious solar profiles}
-# CODE POUR LA PLUS FORTE VALEUR DANS LA NUIT
-max_night_light <- df_solar %>%
-  filter(period == "Night") %>%
-  summarise(max_light = max(light, na.rm = TRUE)) %>%
-  pull(max_light)
-
-night_rows <- which(df_solar$period == "Night")
-local_max_index <- which.max(df_solar$light[night_rows])
-global_max_index <- night_rows[local_max_index]
-
-#global_max_index <- 99
-
-plot(light[m,global_max_index], pres[m,global_max_index],
-     type = "l",
-     xlim = range(light[,global_max_index], na.rm = TRUE),
-     ylim = rev(c(0, 50)),
-     xlab = "Light ln(µmol/m²/s)",
-     ylab = "Depth (m)",
-     main = paste0("profil index: ", global_max_index, " - Value: ",  sprintf("%.2f", max_night_light), " (", format(date_subset[global_max_index], "%Y-%m-%d"), ")"))
-grid()
-
-```
-
-## Light and ice
-```{r}
-LON_MIN <- 130
-LON_MAX <- 150
-LAT_MIN <- -68
-LAT_MAX <- -65
-```
-
-```{r}
-fine_topo <- raster(BATHY_PATH_FINE)
-fine_topo[fine_topo >=0] <-NA
-fine_topo_spat <- terra::rast(fine_topo)
-
-large_topo <- raster(BATHY_PATH_LARGE)
-large_topo[large_topo >=0] <-NA
-large_topo_spat <- terra::rast(large_topo)
-
-fine_topo_spat <- crop(fine_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
-large_topo_spat <- crop(large_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
-```
-
-```{r}
-prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
-ex <- c(-2691055, 2933945, -2390156, 2309844)
-
-fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
-set.ext(fast_ice_raster, ext(ex))
-set.crs(fast_ice_raster, crs(prj))
-#plot(fast_ice_raster[[1]], legend = FALSE) # le continent
-
-points <- cbind(
-  lon = c(LON_MIN, LON_MAX),  
-  lat = c(LAT_MIN, LAT_MAX)
-)
-
-prjpoints <- project(points, to = prj, from = "EPSG:4326")
-new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
-new_r=crop(fast_ice_raster,new_ex)
-# From feb to may
-time_index <- seq(1,4, by = 1) 
-x_sub <- subset(new_r, time_index)
-plot(x_sub, legend = FALSE)
-```
-
-```{r}
-x_sub2= project(x_sub, crs(large_topo_spat), 
-                res = res(large_topo_spat)) 
-
-# Create a sequence of months between the first and last month
-start <- format(as.Date("2019-02-05"), "%m")
-end <- format(as.Date("2019-05-06"), "%m")
-
-months_seq <- seq(from = start, to = end)
-
-# Extract the month names from the sequence
-month_names <- paste0("2019 - ", month.name[months_seq])
-
-names(x_sub2) <- month_names
-plot(x_sub2, legend = FALSE)
-x_sub2 <- crop(x_sub2, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
-plot(x_sub2, legend = FALSE)
-
-x_sub2=round(x_sub2)
-#description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
-x_sub2[x_sub2 == 0 |x_sub2 == 1 | x_sub2 == 2 | x_sub2 == 3 | x_sub2 == 5| x_sub2 == 6] <- NA
-
-glacier=x_sub2[[4]]
-```
-
-```{r}
-wgs <- "+proj=longlat +ellps=WGS84"
- amsr_raster <- raster(AMSR_PATH)
- amsr_raster[amsr_raster > 100] <- NA_real_
- amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
- plot(amsr_raster)
- 
- points <- cbind(
-   lon = c(LON_MIN, LON_MAX),  
-   lat = c(LAT_MIN, LAT_MAX)
- )
- 
- boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
- amsr_cropped=crop(amsr_raster, boxext)
- plot(amsr_cropped)
- 
- amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
- plot(amsr_raster_cropped)
-```
-
-```{r AMSR}
-
-wgs <- "+proj=longlat +ellps=WGS84"
-amsr_dir <- AMSR_FOLDER_PATH
-all_files <- list.files(amsr_dir, full.names = TRUE)
-
-target_year_month <- "201901"
-date_obj <- as.Date(paste0(target_year_month, "01"), format = "%Y%m%d")
-formatted_title <- format(date_obj, "%B %Y") 
-
-selected_files <- all_files[str_detect(all_files, paste0("s3125-", target_year_month))]
-
-raster_list <- lapply(selected_files, function(f) {
-  r <- raster(f)
-  r[r > 100] <- NA_real_
-  r
-})
-
-raster_stack <- stack(raster_list)
-
-points <- cbind(lon = c(LON_MIN, LON_MAX), lat = c(LAT_MIN, LAT_MAX))
-boxext <- extent(projectExtent(raster(extent(c(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)), crs = wgs), projection(mean_raster)))
-raster_cropped <- crop(raster_stack, boxext)
-
-mean_raster <- calc(raster_cropped, fun = mean, na.rm = TRUE)
-median_raster <- calc(raster_cropped, fun = median, na.rm = TRUE)
-sd_raster <- calc(raster_cropped, fun = sd, na.rm = TRUE)
-
-mean_raster_wgs <- projectRaster(mean_raster, crs = wgs)
-median_raster_wgs <- projectRaster(median_raster, crs = wgs)
-sd_raster_wgs <- projectRaster(sd_raster, crs = wgs)
-
-mean_spat <- rast(mean_raster_wgs)
-median_spat <- rast(median_raster_wgs)
-sd_spat <- rast(sd_raster_wgs)
-
-plot(mean_spat, main = paste("AMSR mean -", formatted_title))
-plot(median_spat, main = paste("AMSR mediane -", formatted_title))
-plot(sd_spat, main = paste("AMSR  SD -", formatted_title))
-```
-
-```{r Draft map SIC FI}
-month_profile = 4
-profiles_per_month <- df_surface_clean %>% filter(lubridate::month(date) == month_profile)
-
-ggplot() +
-  geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6)+ #bathy
-  geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6)+
-  geom_spatraster(data = mean_spat, alpha = 0.6)+ # moyenne AMSR2 sur le mois 
-  geom_spatraster(data = glacier, alpha = 0.6)+ # glace
-  geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +  
-  xlab("Longitude") + ylab("Latitude")+
-  theme_minimal()
-```
-
-```{r}
-ggplot() +
-  geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6) + # bathy
-  geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6) +
-  geom_spatraster(data = mean_spat, alpha = 0.6) + # moyenne AMSR2 sur le mois
-  geom_spatraster(data = glacier, alpha = 0.6) + # glacier
-  geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +
-  xlab("Longitude") + ylab("Latitude") +
-  theme_minimal() +
-  coord_sf(xlim = c(139, 141),ylim = c(-66.8, -66))
-```
-
-```{r}
-library(sf)
-dt_ddu <- format(profiles_per_month, tz = "Australia/Hobart", usetz = TRUE)
-profiles_per_month$month <- lubridate::month(profiles_per_month$date)
-
-points_sf <- st_as_sf(profiles_per_month, coords = c("lon", "lat"), crs = 4326) # Transforme en objets spatiaux
-points_vect <- terra::vect(points_sf)
-
-glacier_mask <- glacier
-glacier_mask[glacier_mask == 4] <- 1
-
-extract_sic    <- terra::extract(amsr_raster_cropped, points_vect, ID = FALSE)
-extract_mean   <- terra::extract(mean_spat, points_vect, ID = FALSE)
-extract_median <- terra::extract(median_spat, points_vect, ID = FALSE)
-extract_sd     <- terra::extract(sd_spat, points_vect, ID = FALSE)
-extract_glac   <- terra::extract(glacier_mask, points_vect, ID = FALSE)
-
-profiles_per_month$SICm        <- extract_sic[,1]
-profiles_per_month$SICm_mean   <- extract_mean[,1]
-profiles_per_month$SICm_median <- extract_median[,1]
-profiles_per_month$SICm_sd     <- extract_sd[,1]
-profiles_per_month$glacier_presence <- extract_glac[,1]
-
-```
-
+<h2>FLUO</h2>
+<h4>FLUO : Estimation of NA columns</h4>
 ```{r NaN_Chla}
 col_na_only <- apply(chla, 2, function(col) all(is.na(col)))
 which(col_na_only)
@@ -888,35 +525,8 @@ which(col_na_only)
 cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 ```
 
-```{r TotalChla}
-chla_subset <- chla [1:MAX_CHLA_DEPTH, !col_na_only]
-lat_subset <- lat[!col_na_only]
-lon_subset <- lon[!col_na_only]
-date_subset <- dateTime[!col_na_only]
-
-# light_subset <- light [1:MAX_CHLA_DEPTH, !col_na_only]
-# temp_subset <- temp [1:MAX_CHLA_DEPTH, !col_na_only]
-# psal_subset <- psal [1:MAX_CHLA_DEPTH, !col_na_only]
-# pres_subset <- pres [1:MAX_CHLA_DEPTH, !col_na_only]
-
-total_chla <- colSums(chla_subset, na.rm = TRUE)
-profil_names <- as.character(seq_along(total_chla))
-
-plot(
-  total_chla,
-  type = "b",                     
-  pch = 18,                        
-  col = "blue",
-  xlab = "Profil n°",
-  ylab = "Total Chl-a (mg/m³)",
-  main = paste0("Chl-a totale par profile : ", SEAL_NAME),
-  xaxt = "n"                       
-)
-
-axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
-```
-
-```{r DarkValue}
+<h4>Dark-value correction for Chl-a profiles (only works for some profiles, investigating where the code is incorrect)</h4>
+```{r DarkValue_chla}
 
 
 correct_chla_profile_matlab <- function(col_data, pres_vec,
@@ -983,13 +593,12 @@ correct_chla_profile_matlab <- function(col_data, pres_vec,
               PDARK_temp = PDARK_temp))
 }
 
-
-pres_vec <- pres[, 1]  # si pres est une matrice
 result_list <- lapply(1:ncol(chla), function(i) correct_chla_profile_matlab(chla[, i], pres_vec))
 
 ```
 
-```{r}
+<h4>Plotting dark value correction for Chl-a</h4>
+```{r plot_dk_chla}
 # Extraire les résultats
 chla_corrected <- sapply(result_list, function(x) x$corrected)   # matrice de profils corrigés
 dark_vals <- sapply(result_list, function(x) x$dark_val)         # vecteur
@@ -1007,7 +616,7 @@ nprofile=12
 plot(chla[1:MAX_CHLA_DEPTH, nprofile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
      ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
      xlim = range(c(0,0.05)), #range(c(chla[1:MAX_CHLA_DEPTH, nprofile], chla_corrected[1:MAX_CHLA_DEPTH, nprofile])),
-     xlab = "Chl-a (mg/m³)", ylab = "Depth (m)", main = paste("Chl-a profile", nprofile, "-", SEAL_NAME))
+     xlab = "Chl-a (mg/m³)", ylab = "Depth (m)", main = paste("Chl-a profile (DK)", nprofile, "-", SEAL_NAME))
 
 lines(chla_corrected[1:MAX_CHLA_DEPTH, nprofile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
 
@@ -1019,7 +628,8 @@ abline(h = mld_vals[nprofile], col = "purple", lty = 2)
 legend("bottomleft", legend = "MLD", col =  "purple", lty = 1, bty="n")
 ```
 
-```{r}
+<h4>Plotting all dark value correction profiles for Chl-a, before and after correction</h4>
+```{r plot_all_dk_chla}
 matplot(chla[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
@@ -1037,11 +647,14 @@ matplot(chla_corrected[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         ylab = "Depth (m)",
         main = paste0("Chl-a profiles corrected : ", SEAL_NAME))
 grid()
+```
 
+```{r}
 chla <- chla_corrected
 ```
 
-```{r NPQ correction}
+<h4>Non Photochemical Quenching correction for Chl-a profiles (as dark-value correction works only for some profiles, need to verify this code once DK is fixed)</h4>
+```{r NPQ_correction}
 
 apply_npq_correction <- function(chla, pres_vec, mld_vec, quenchDepth_vec, MAX_CHLA_DEPTH) {
   nprofiles <- ncol(chla)
@@ -1121,20 +734,21 @@ npqCorrDepth <- result$npqCorrDepth
 
 ```
 
-```{r}
+<h4>Plotting NPQ correction for Chl-a</h4>
+```{r NPQ_plot}
 nprofile <- 12  # ou n'importe quel profil que tu veux visualiser
 
 plot(
   chla[1:MAX_CHLA_DEPTH, nprofile],
-  pres_vector[1:MAX_CHLA_DEPTH],
+  pres_vec[1:MAX_CHLA_DEPTH],
   type = "l", col = "blue",
-  ylim = rev(range(pres_vector[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
+  ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
   xlim = range(c(0,0.05)),#range(c(chla[1:MAX_CHLA_DEPTH, nprofile], chla_corrected[1:MAX_CHLA_DEPTH, nprofile]), na.rm = TRUE),
   xlab = "Chl-a", ylab = "Depth",
   main = paste("Profil", nprofile, "-", SEAL_NAME)
 )
 
-lines(chla_corrected[1:MAX_CHLA_DEPTH, nprofile], pres_vector[1:MAX_CHLA_DEPTH], col = "red")
+lines(chla_corrected[1:MAX_CHLA_DEPTH, nprofile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
 
 legend("bottomright", legend = c("Original", "Corrected"), col = c("blue", "red"), lty = 1, bty = "n")
 
@@ -1145,7 +759,28 @@ legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purp
 
 ```
 
+<h4>Computing total fluo per profile (same remark as for light, plot it before and after correction</h4>
+```{r TotalChla}
+chla_subset <- chla_corrected [1:MAX_CHLA_DEPTH, !col_na_only]
 
+total_chla <- colSums(chla_subset, na.rm = TRUE)
+profil_names <- as.character(seq_along(total_chla))
+
+plot(
+  total_chla,
+  type = "b",                     
+  pch = 18,                        
+  col = "blue",
+  xlab = "Profil n°",
+  ylab = "Total Chl-a (mg/m³)",
+  main = paste0("Chl-a totale par profile : ", SEAL_NAME),
+  xaxt = "n"                       
+)
+
+axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
+```
+
+<h4>Saving and classifying Chl-a profiles</h4>
 ```{r SaveAndClassifyChlaProfiles}
 
 dir_standard = "profils_chla_standard"
@@ -1157,7 +792,6 @@ nchla = ncol(chla)
 
 for (i in 1:nchla) {
   profil_chla <- chla[, i]
-  profil_pres <- pres[, i]
   
   delta_chla <- profil_chla - profil_chla[1]
 
@@ -1171,7 +805,7 @@ for (i in 1:nchla) {
   
   png(filename, width = 800, height = 600)
   
-  plot(profil_chla, profil_pres,
+  plot(profil_chla, pres_vec,
        type = "l",
        xlim = c(0,0.1),
        ylim = rev(c(0, MAX_CHLA_DEPTH)),
@@ -1188,15 +822,486 @@ for (i in 1:nchla) {
   dev.off()
 }
 
-cat("Classification terminée :\n")
-cat(nchla, "profils analysés\n")
-cat("->", length(list.files(dir_standard)), "profils standards dans", dir_standard, "\n")
-cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypique, "\n\n")
+# cat("Classification terminée :\n")
+# cat(nchla, "profils analysés\n")
+# cat("->", length(list.files(dir_standard)), "profils standards dans", dir_standard, "\n")
+# cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypique, "\n\n")
 
 ```
 
-## Couche Eupho + PAR 15 + RSD : le cimetiere
+<h2>Light and fluo corrected : profiles</h2>
 ```{r}
+idprofile <- 12
+
+df_L_F_corrected <- data.frame(
+  depth = pres_vec[1:MAX_CHLA_DEPTH],
+  chla = chla_corrected[1:MAX_CHLA_DEPTH,idprofile],
+  light = light_corrected[1:MAX_CHLA_DEPTH,idprofile]
+)
+
+# long format
+df_long_corrected <- df_L_F_corrected %>%
+  pivot_longer(cols = c("chla", "light"), names_to = "variable", values_to = "value")
+
+# Tracé avec ggplot
+ggplot(df_long_corrected, aes(x = value, y = depth, color = variable)) +
+  geom_line(size = 1) +
+  scale_y_reverse() +  # profondeur vers le bas
+  labs(x = "Valeur", y = "Profondeur (m)", color = "Variable") +
+  theme_minimal()
+
+```
+
+<h2>Light Temperature Salinity Fluo</h2>
+<h4>Plotting one Light temperature salinity & FLUO profile</h4>
+```{r PlotProfile_LTSC}
+n <- 5
+
+# Création du data.frame long
+df_profile <- data.frame(
+  depth = pres_vec,
+  Light = light[, n],
+  Temperature = temp[, n],
+  Salinity = sal[, n],
+  CHLA = chla[, n]
+) %>% pivot_longer(cols = -depth, names_to = "variable", values_to = "value")
+
+# ggplot avec facet
+ggplot(df_profile, aes(x = value, y = depth)) +
+  geom_line() +
+  scale_y_reverse(limits = c(MAX_CHLA_DEPTH, 0)) +
+  facet_wrap(~ variable, scales = "free_x", nrow = 1) +
+  labs(x = NULL, y = "Depth (m)") +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey80")) +
+    ggtitle(paste0(SEAL_NAME, " : ", n, "/", ncol(light_corrected), " (", format(dateTime[n], "%Y-%m-%d"), ")"))
+
+```
+<h2>Analyzing profiles prosition & solar angle computation</h2>
+<h4>Dataframe creation for analyzing profiles position</h4>
+```{r dataframeCreation}
+
+depth_interval <- pres_vec[SURFACE_NOT_NAN]
+light_interval <- light_corrected[SURFACE_NOT_NAN, ]
+
+depth_diff <- c(diff(depth_interval), 0)  
+
+light_surf_avg <- apply(light_interval, 2, function(x) {
+  sum(x * depth_diff, na.rm = TRUE) / sum(depth_diff, na.rm = TRUE)
+})
+
+light_20m <- light_corrected[20, ]
+light_40m <- light_corrected[40, ]
+
+df_light <- data.frame(
+  lon = lon,
+  lat = lat,
+  date = dateTime,
+  light_surf = light_surf_avg,
+  light_20 = light_20m,
+  light_40 = light_40m
+)
+
+df_10m_clean <- df_light %>% filter(!is.na(light_surf))
+df_20m_clean <- df_light %>% filter(!is.na(light_20))
+df_40m_clean <- df_light %>% filter(!is.na(light_40))
+
+n_profiles_surf <- length(df_10m_clean$light_surf)
+n_profiles_20 <- length(df_20m_clean$light_20)
+n_profiles_40 <- length(df_40m_clean$light_40)
+
+ggplot(df_10m_clean, aes(x = lon, y = lat, color = light_surf)) +
+  geom_point(size = 2) +
+  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
+  labs(
+    title = paste0(n_profiles_surf," light profiles (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7],"m deep)"),
+    x = "Longitude",
+    y = "Latitude",
+    color = "Light\nln(µmol/m²/s)"
+  ) +
+  theme_minimal()
+
+ggplot(df_20m_clean, aes(x = lon, y = lat, color = light_20)) +
+  geom_point(size = 2) +
+  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
+  labs(
+    title = paste0(n_profiles_20," light profiles (", 20,"m deep)"),
+    x = "Longitude",
+    y = "Latitude",
+    color = "Light\nln(µmol/m²/s)"
+  ) +
+  theme_minimal()
+
+ggplot(df_40m_clean %>% filter(!is.na(light_40)), aes(x = lon, y = lat, color = light_40)) +
+  geom_point(size = 2) +
+  scale_color_viridis_c(limits = c(0, 10), oob = scales::squish) +
+  labs(
+    title = paste0(n_profiles_40, " light profiles (", 40, "m deep)"),
+    x = "Longitude",
+    y = "Latitude",
+    color = "Light\nln(µmol/m²/s)"
+  ) +
+  theme_minimal()
+
+```
+
+<h4>Computing solar angle & classifying in Day / Night / Twilight by atitude bins</h4>
+```{r SolarAngle}
+solar_angle = sunAngle(dateTime, lon, lat)$altitude
+solar_threshold <- -12
+
+# tranche de 0.1 : 10 - 0.5 : 2 - 0.05 : 20
+lat_bin <- floor(lat * 20) / 20
+
+df_solar <- data.frame(
+  date = dateTime,
+  lat = lat,
+  lat_bin = lat_bin,
+  lon = lon,
+  solar_angle = solar_angle,
+  light = light_surf_avg
+)
+
+df_solar <- df_solar %>%
+  mutate(period = case_when(
+    solar_angle >= 0 ~ "Day",
+    solar_angle < 0 & solar_angle > solar_threshold ~ "Twilight",
+    solar_angle <= solar_threshold ~ "Night"
+  ))
+
+nPeriod_by_lat <- df_solar %>%
+  group_by(lat_bin, period) %>%
+  summarise(n = n(), .groups = "drop")
+
+ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
+  geom_point() +
+  facet_wrap(~lat_bin, scales = "fixed") +
+  coord_cartesian(ylim = c(-40, 40)) +
+  labs(title = "Solar Angle by Latitude Bin",x = "Date",y = "Solar Angle (°)") +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
+  theme_minimal()
+
+
+ggplot(df_solar, aes(x = date, y = light, color = period)) +
+  geom_point() +
+  facet_wrap(~lat_bin, scales = "free_y") +
+  coord_cartesian(ylim = c(-5, 15)) +
+  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ",SURFACE_NOT_NAN[7], "m deep) by Latitude Bin"), x = "Date", y = "ln(µmol/m²/sec)") +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
+  theme_minimal()
+
+
+```
+
+<h4>Plotting solar angle and light values at 4-10m deep</h4>
+```{r LightThroughTime}
+
+nPeriod = df_solar %>%  count(period)
+
+cat("Number of Day values :", nPeriod$n[1], "\n")
+cat("Number of Night values :", nPeriod$n[2], "\n")
+cat("Number of Twilight values :", nPeriod$n[3], "\n")
+
+ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
+  geom_point() +
+  labs(title = "Solar Angle",
+       x = "Date", y = "Solar Angle (°)") +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
+  theme_minimal()
+
+vline_dates <- as.POSIXct(c("2019-02-20 01:12:00", "2019-03-21 00:46:00", "2019-04-19 07:30:00"))
+
+ggplot(df_solar, aes(x = date, y = light, color = period)) +
+  geom_point() +
+  # geom_vline(xintercept = vline_dates, linetype = "dashed", color = "black") +
+  # annotate("text", x = vline_dates[1], y = max(df_solar$light, na.rm = TRUE), label = "20/02\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  # annotate("text", x = vline_dates[2], y = max(df_solar$light, na.rm = TRUE), label = "21/03\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  # annotate("text", x = vline_dates[3], y = max(df_solar$light, na.rm = TRUE), label = "19/04\n🌙", angle = 90, vjust = -0.5, size = 3) +
+  labs(
+    title = paste0("Light (", SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[7], "m deep)"),
+    x = "Date", y = "ln(µmol/m²/sec)"
+  ) +
+  scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
+  theme_minimal()
+```
+
+<h4>Geographical Classification of Profiles Relative to the DDU Station</h4>
+```{r Light_profile_NSEW}
+df_solar$lon <- lon
+df_solar$lat <- lat
+
+lon_center <-  DDU_loc$lon 
+lat_center <-  DDU_loc$lat
+
+df_solar <- df_solar %>%
+  mutate(zone = case_when(
+    lon <= lon_center & lat >= lat_center ~ "Nord-Ouest",
+    lon > lon_center & lat >= lat_center ~ "Nord-Est",
+    lon <= lon_center & lat < lat_center ~ "Sud-Ouest",
+    lon > lon_center & lat < lat_center ~ "Sud-Est"
+  ))
+
+ggplot(df_solar, aes(x = lon, y = lat, color = zone, shape = period)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # croix rouge
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # étiquette
+  labs(title = "Zones (couleur) et période jour/nuit/crépuscule (forme)", x = "Longitude", y = "Latitude") +
+  scale_color_manual(values = c("Nord-Ouest" = "darkorange", "Nord-Est" = "purple", "Sud-Ouest" = "blue", "Sud-Est" = "darkgreen")) +
+  scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
+  theme_minimal()
+
+```
+
+<h4>Classification of Profiles Based on Their Distance from the DDU Station</h4>
+```{r LightProfile_distance_DDU}
+df_solar <- df_solar %>%
+  mutate(distance_to_center = sqrt((lon - lon_center)^2 + (lat - lat_center)^2))
+
+df_solar <- df_solar %>%
+  mutate(distance_group = case_when(
+    distance_to_center < 0.05 ~ "Centre",
+    distance_to_center < 0.15 ~ "Périphérie proche",
+    TRUE ~ "Périphérie lointaine"
+  ))
+
+ggplot(df_solar, aes(x = lon, y = lat, color = distance_group, shape = period)) +
+  geom_point(size = 2, alpha = 0.8) +
+  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # croix rouge
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # étiquette
+  labs(title = "", x = "Longitude", y = "Latitude") + scale_color_manual(values = c("Centre" = "firebrick", "Périphérie proche" = "goldenrod", "Périphérie lointaine" = "steelblue")) +
+  scale_shape_manual(values = c("Day" = 16, "Twilight" = 17, "Night" = 15)) +
+  theme_minimal()
+
+```
+
+<h4> Extracting suspicious night profiles</h4>
+```{r extract Suspicious solar profiles}
+# CODE POUR LA PLUS FORTE VALEUR DANS LA NUIT
+# pas de points categorisés comme nuit pour cet individu.
+# max_night_light <- df_solar %>%
+#   filter(period == "Night") %>%
+#   summarise(max_light = max(light, na.rm = TRUE)) %>%
+#   pull(max_light)
+# 
+# night_rows <- which(df_solar$period == "Night")
+# local_max_index <- which.max(df_solar$light[night_rows])
+# global_max_index <- night_rows[local_max_index]
+
+global_max_index <- 10
+
+
+plot(light[,global_max_index], pres_vec,
+     type = "l",
+     xlim = range(light[,global_max_index], na.rm = TRUE),
+     ylim = rev(c(0, 50)),
+     xlab = "Light ln(µmol/m²/s)",
+     ylab = "Depth (m)",
+     main = paste0("profil index: ", global_max_index, " (", format(dateTime[global_max_index], "%Y-%m-%d"), ")"))
+grid()
+
+```
+
+<h2>MAPS</h2>
+<h4>Preparing coordinates for Fast ice / SIC map</h4>
+```{r setWindow_fastIce_SIC}
+LON_MIN <- 130
+LON_MAX <- 150
+LAT_MIN <- -68
+LAT_MAX <- -65
+```
+
+<h4>Loading bathymetry</h4>
+```{r Bathy}
+fine_topo <- raster(BATHY_PATH_FINE)
+fine_topo[fine_topo >=0] <-NA
+fine_topo_spat <- terra::rast(fine_topo)
+
+large_topo <- raster(BATHY_PATH_LARGE)
+large_topo[large_topo >=0] <-NA
+large_topo_spat <- terra::rast(large_topo)
+
+fine_topo_spat <- crop(fine_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
+large_topo_spat <- crop(large_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
+```
+
+<h4>Loading and cropping fast ice raster</h4>
+```{r Fast_ice}
+prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+ex <- c(-2691055, 2933945, -2390156, 2309844)
+
+fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
+set.ext(fast_ice_raster, ext(ex))
+set.crs(fast_ice_raster, crs(prj))
+#plot(fast_ice_raster[[1]], legend = FALSE) # le continent
+
+points <- cbind(
+  lon = c(LON_MIN, LON_MAX),  
+  lat = c(LAT_MIN, LAT_MAX)
+)
+
+prjpoints <- project(points, to = prj, from = "EPSG:4326")
+new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
+new_r=crop(fast_ice_raster,new_ex)
+# From feb to may
+time_index <- seq(1,4, by = 1) 
+x_sub <- subset(new_r, time_index)
+plot(x_sub, legend = FALSE)
+```
+
+<h4>Removing values from the raster we don't want (we want fast-ice values)</h4>
+```{r fast_ice_processing}
+x_sub2= project(x_sub, crs(large_topo_spat), 
+                res = res(large_topo_spat)) 
+
+# Create a sequence of months between the first and last month
+start <- format(as.Date("2019-02-05"), "%m")
+end <- format(as.Date("2019-05-06"), "%m")
+
+months_seq <- seq(from = start, to = end)
+
+# Extract the month names from the sequence
+month_names <- paste0("2019 - ", month.name[months_seq])
+
+names(x_sub2) <- month_names
+plot(x_sub2, legend = FALSE)
+x_sub2 <- crop(x_sub2, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
+plot(x_sub2, legend = FALSE)
+
+x_sub2=round(x_sub2)
+#description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
+x_sub2[x_sub2 == 0 |x_sub2 == 1 | x_sub2 == 2 | x_sub2 == 3 | x_sub2 == 5| x_sub2 == 6] <- NA
+
+glacier=x_sub2[[4]]
+```
+
+<h4>Loading and cropping AMSR raster</h4>
+```{r AMSR}
+wgs <- "+proj=longlat +ellps=WGS84"
+ amsr_raster <- raster(AMSR_PATH)
+ amsr_raster[amsr_raster > 100] <- NA_real_
+ amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
+ plot(amsr_raster)
+ 
+ points <- cbind(
+   lon = c(LON_MIN, LON_MAX),  
+   lat = c(LAT_MIN, LAT_MAX)
+ )
+ 
+ boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
+ amsr_cropped=crop(amsr_raster, boxext)
+ plot(amsr_cropped)
+ 
+ amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
+ plot(amsr_raster_cropped)
+```
+
+<h4>Computing mean/sd/median of SIC raster map, and plotting</h4>
+```{r AMSR_processing}
+
+wgs <- "+proj=longlat +ellps=WGS84"
+amsr_dir <- AMSR_FOLDER_PATH
+all_files <- list.files(amsr_dir, full.names = TRUE)
+
+target_year_month <- "201901"
+date_obj <- as.Date(paste0(target_year_month, "01"), format = "%Y%m%d")
+formatted_title <- format(date_obj, "%B %Y") 
+
+selected_files <- all_files[str_detect(all_files, paste0("s3125-", target_year_month))]
+
+raster_list <- lapply(selected_files, function(f) {
+  r <- raster(f)
+  r[r > 100] <- NA_real_
+  r
+})
+
+raster_stack <- stack(raster_list)
+ref_raster <- raster_list[[1]]
+
+points <- cbind(lon = c(LON_MIN, LON_MAX), lat = c(LAT_MIN, LAT_MAX))
+boxext <- extent(projectExtent(raster(extent(c(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)), crs = wgs), projection(ref_raster)))
+raster_cropped <- crop(raster_stack, boxext)
+
+mean_raster <- calc(raster_cropped, fun = mean, na.rm = TRUE)
+median_raster <- calc(raster_cropped, fun = median, na.rm = TRUE)
+sd_raster <- calc(raster_cropped, fun = sd, na.rm = TRUE)
+
+mean_raster_wgs <- projectRaster(mean_raster, crs = wgs)
+median_raster_wgs <- projectRaster(median_raster, crs = wgs)
+sd_raster_wgs <- projectRaster(sd_raster, crs = wgs)
+
+mean_spat <- rast(mean_raster_wgs)
+median_spat <- rast(median_raster_wgs)
+sd_spat <- rast(sd_raster_wgs)
+
+plot(mean_spat, main = paste("AMSR mean -", formatted_title))
+plot(median_spat, main = paste("AMSR mediane -", formatted_title))
+plot(sd_spat, main = paste("AMSR  SD -", formatted_title))
+```
+
+<h4>Fusion of SIC fast ice and light profiles</h4>
+```{r Draft map SIC FI}
+month_profile = 12 # december
+profiles_per_month <- df_10m_clean %>% filter(lubridate::month(date) == month_profile)
+profiles_per_month$month <- lubridate::month(profiles_per_month$date)
+
+ggplot() +
+  geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6)+ #bathy
+  geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6)+
+  geom_spatraster(data = mean_spat, alpha = 0.6)+ # moyenne AMSR2 sur le mois 
+  geom_spatraster(data = glacier, alpha = 0.6)+ # glace
+  geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +  
+  xlab("Longitude") + ylab("Latitude")+
+  theme_minimal()
+```
+
+<h4>Fusion of SIC fast ice and light profiles (smaller crop)</h4>
+```{r SIC_fast_icePlot}
+ggplot() +
+  geom_spatraster_contour(data = fine_topo_spat, alpha = 0.6) + # bathy
+  geom_spatraster_contour_text(data = fine_topo_spat, alpha = 0.6) +
+  geom_spatraster(data = mean_spat, alpha = 0.6) + # moyenne AMSR2 sur le mois
+  geom_spatraster(data = glacier, alpha = 0.6) + # glacier
+  geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme_minimal() +
+  coord_sf(xlim = c(139, 141),ylim = c(-66.8, -66))
+```
+
+<h2>RECAP TABLE</h2>
+<h4>Extracting tab and gathering data from Previous codes</h4>
+```{r final_SIC_fastIce_tab}
+library(sf)
+dt_ddu <- format(profiles_per_month, tz = "Australia/Hobart", usetz = TRUE)
+
+points_sf <- st_as_sf(profiles_per_month, coords = c("lon", "lat"), crs = 4326) # Transforme en objets spatiaux
+points_vect <- terra::vect(points_sf)
+
+glacier_mask <- glacier
+glacier_mask[glacier_mask == 4] <- 1
+
+amsr_rast <- rast(amsr_raster)  # conversion RasterLayer -> SpatRaster
+
+extract_sic <- terra::extract(amsr_rast, points_vect, ID = FALSE)
+extract_mean   <- terra::extract(mean_spat, points_vect, ID = FALSE)
+extract_median <- terra::extract(median_spat, points_vect, ID = FALSE)
+extract_sd     <- terra::extract(sd_spat, points_vect, ID = FALSE)
+extract_glac   <- terra::extract(glacier_mask, points_vect, ID = FALSE)
+
+profiles_per_month$SICm        <- extract_sic[,1]
+profiles_per_month$SICm_mean   <- extract_mean[,1]
+profiles_per_month$SICm_median <- extract_median[,1]
+profiles_per_month$SICm_sd     <- extract_sd[,1]
+profiles_per_month$glacier_presence <- extract_glac[,1]
+
+profiles_per_month
+```
+
+<h2>Other</h2>
+<h4>Cemetery : Unused code, but may be useful one day.</h4>
+```{r Cemetery}
 # COUCHE EUPHO
 # pas utile pour le moment (attention code peut etre faux)
 
