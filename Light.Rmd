@@ -105,8 +105,8 @@ for (file_name in names(profiles_list)) {
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data"
-DEPLOY_FOLDER <- "wd10"
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-678-17")
+DEPLOY_FOLDER <- "wd11"
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-682-17")
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 
@@ -247,10 +247,6 @@ for (i in validProfiles) {
   }
 }
 
-# Plots
-# mld_vals <- mld_vec[validProfiles]
-# mld_moving_median <- rollapply(mld_vals, width = 135, FUN = median, na.rm = TRUE, align = "center", partial = TRUE)
-
 # Créer un data frame avec les valeurs valides
 df_mld <- data.frame(
   profile = validProfiles,
@@ -269,62 +265,62 @@ ggplot(df_mld, aes(x = profile, y = value)) +
 
 <h4> Light and fluo profiles, not corrected </h4>
 ```{r}
-idprofile <- 13
-
-df_L_F <- data.frame(
-  depth = pres_vec[1:MAX_CHLA_DEPTH],
-  chla = chla[1:MAX_CHLA_DEPTH,idprofile],
-  light = light[1:MAX_CHLA_DEPTH,idprofile]
-)
-
-# long format
-df_long <- df_L_F %>%
-  pivot_longer(cols = c("chla", "light"), names_to = "variable", values_to = "value")
-
-# Tracé avec ggplot
-ggplot(df_long, aes(x = value, y = depth, color = variable)) +
-  geom_line(size = 1) +
-  scale_y_reverse() +  # profondeur vers le bas
-  labs(x = "Valeur", y = "Profondeur (m)", color = "Variable") +
-  theme_minimal()
-
-# library(ggplot2)
-# library(dplyr)
+# idprofile <- 13
 # 
-# idprofile <- 10
-# 
-# # Base commune
-# depth <- pres_vec[1:MAX_CHLA_DEPTH]
-# chla_vals <- chla[1:MAX_CHLA_DEPTH, idprofile]
-# light_vals <- light[1:MAX_CHLA_DEPTH, idprofile]
-# 
-# # Échelle de conversion : on ramène "light" sur une échelle comparable visuellement
-# light_scaled <- light_vals / max(light_vals, na.rm = TRUE)
-# chla_scaled <- chla_vals / max(chla_vals, na.rm = TRUE)
-# 
-# df_plot <- data.frame(
-#   depth = depth,
-#   chla = chla_vals,
-#   light = light_vals,
-#   light_scaled = light_scaled,
-#   chla_scaled = chla_scaled
+# df_L_F <- data.frame(
+#   depth = pres_vec[1:MAX_CHLA_DEPTH],
+#   chla = chla[1:MAX_CHLA_DEPTH,idprofile],
+#   light = light[1:MAX_CHLA_DEPTH,idprofile]
 # )
 # 
-# ggplot(df_plot, aes(y = depth)) +
-#   geom_line(aes(x = chla_scaled), color = "green", size = 1) +
-#   geom_line(aes(x = light_scaled), color = "black", size = 1) +
-#   scale_y_reverse() +
-#   scale_x_continuous(
-#     name = "Chlorophylle (mg/m³)",
-#     sec.axis = sec_axis(~ . , name = "Lumière (uE/m²/s)")  # même échelle, visuellement différent
-#   ) +
-#   theme_minimal() +
-#   theme(
-#     axis.title.x.top = element_text(color = "black"),
-#     axis.title.x.bottom = element_text(color = "green"),
-#     axis.text.x.top = element_text(color = "black"),
-#     axis.text.x.bottom = element_text(color = "green")
-#   )
+# # long format
+# df_long <- df_L_F %>%
+#   pivot_longer(cols = c("chla", "light"), names_to = "variable", values_to = "value")
+# 
+# # Tracé avec ggplot
+# ggplot(df_long, aes(x = value, y = depth, color = variable)) +
+#   geom_line(size = 1) +
+#   scale_y_reverse() +  # profondeur vers le bas
+#   labs(x = "Valeur", y = "Profondeur (m)", color = "Variable") +
+#   theme_minimal()
+
+library(ggplot2)
+library(dplyr)
+
+idprofile <- 11
+
+# Base commune
+depth <- pres_vec[1:MAX_CHLA_DEPTH]
+chla_vals <- chla[1:MAX_CHLA_DEPTH, idprofile]
+light_vals <- light[1:MAX_CHLA_DEPTH, idprofile]
+
+# Échelle de conversion : on ramène "light" sur une échelle comparable visuellement
+light_scaled <- light_vals / max(light_vals, na.rm = TRUE)
+chla_scaled <- chla_vals / max(chla_vals, na.rm = TRUE)
+
+df_plot <- data.frame(
+  depth = depth,
+  chla = chla_vals,
+  light = light_vals,
+  light_scaled = light_scaled,
+  chla_scaled = chla_scaled
+)
+
+ggplot(df_plot, aes(y = depth)) +
+  geom_line(aes(x = chla_scaled), color = "green", size = 1) +
+  geom_line(aes(x = light_scaled), color = "black", size = 1) +
+  scale_y_reverse() +
+  scale_x_continuous(
+    name = "Chlorophylle (mg/m³)",
+    sec.axis = sec_axis(~ . , name = "Lumière (uE/m²/s)")  # même échelle, visuellement différent
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title.x.top = element_text(color = "black"),
+    axis.title.x.bottom = element_text(color = "green"),
+    axis.text.x.top = element_text(color = "black"),
+    axis.text.x.bottom = element_text(color = "green")
+  )
 
 
 ```
@@ -339,61 +335,310 @@ cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 
 <h4>Computing Dark value for light profile</h4>
 ```{r DarkValue}
+library(nortest)
 
-correct_light_profile <- function(col_data, pres_vec, min_window = 4, alpha = 0.01) 
-{
-  # indices valides
-  idx <- which(!is.na(col_data) & col_data != 0)
-  if (length(idx) < min_window) return(rep(NA, length(col_data)))
+# first_valid_index <- function(vec) which(!is.na(vec))[1]
+# last_valid_index  <- function(vec) tail(which(!is.na(vec)), 1)
+# 
+# correct_light_profile <- function(light_non_log_col, light_log_col, pres_vec, 
+#                                   first_non_NaN_temp, last_non_NaN_temp,
+#                                   min_botIntegBound = 150, max_depth_dataset = length(pres_vec),
+#                                   alpha = 0.01, delta_for_cstLIGHT = 1e-8) 
+# {
+#   if (all(is.na(light_non_log_col))) 
+#   {
+#     return(rep(NA, length(light_non_log_col)))
+#   }
+#   
+#   # Initialiser les vecteurs pour stocker les résultats
+#   light_corrected <- light_non_log_col
+#   PDARK_temp <- NA
+#   VDARK_temp <- 0
+#   slop_temp <- NA
+#   slopPART_temp <- NA
+#   h_temp <- 1  # par défaut : non normal
+#   
+#   # Vérification de la présence de données suffisantes
+#   if ((last_non_NaN_temp - first_non_NaN_temp + 1) >= 2) {
+#     # Détection signal constant
+#   }else{
+#     for (jj in first_non_NaN_temp:(last_non_NaN_temp - 1)) {
+#       range_temp <- diff(range(light_corrected[jj:last_non_NaN_temp], na.rm = TRUE))
+#       if (!is.na(range_temp) && range_temp <= delta_for_cstLIGHT) {
+#         light_corrected[(jj+1):length(light_corrected)] <- NA
+#         last_non_NaN_temp <- jj
+#         break
+#       }
+#     }
+# 
+#     # Test de normalité
+#     for (jj in first_non_NaN_temp:(last_non_NaN_temp - 3)) {
+#       segment <- na.omit(light_corrected[jj:last_non_NaN_temp])
+#       if (length(segment) >= 4) {
+#         test <- tryCatch(nortest::lillie.test(segment), error = function(e) NULL)
+#         if (!is.null(test) && test$p.value > alpha) {
+#           h_temp <- 0
+#           break
+#         }
+#       }
+#     }
+# 
+#     if (h_temp == 1) {
+#       ind_dark <- last_non_NaN_temp
+#     } else {
+#       ind_dark <- jj
+#       VDARK_temp <- median(light_corrected[ind_dark:last_non_NaN_temp], na.rm = TRUE)
+#     }
+#     PDARK_temp <- pres_vec[ind_dark]
+# 
+#     # Calcul pente
+#     slop_temp <- (light_log_col[ind_dark] - light_log_col[first_non_NaN_temp]) / 
+#                  (pres_vec[ind_dark] - pres_vec[first_non_NaN_temp])
+#     if (ind_dark > min_botIntegBound) {
+#       slopPART_temp <- (light_log_col[min_botIntegBound] - light_log_col[first_non_NaN_temp]) / 
+#                        (pres_vec[min_botIntegBound] - pres_vec[first_non_NaN_temp])
+#     }
+# 
+#     # Correction du profil
+#     if (h_temp == 0) {
+#       light_corrected[ind_dark:length(light_corrected)] <- NA
+#     }
+#     light_corrected <- light_corrected - VDARK_temp
+#     light_corrected[light_corrected <= 0] <- NA
+# 
+#     # Interpolation
+#     if (sum(!is.na(light_corrected)) >= 2) {
+#       light_corrected[first_non_NaN_temp:last_non_NaN_temp] <- 
+#         zoo::na.approx(light_corrected[first_non_NaN_temp:last_non_NaN_temp], na.rm = FALSE)
+#     }
+#     light_corrected[light_corrected < 0] <- 0
+#   }
+# 
+#   return(light_corrected)
+# }
+# 
+# light_corrected_non_log <- apply(light_non_log, 2, function(col) {
+#   correct_light_profile(
+#     light_non_log_col = exp(col),
+#     light_log_col = col,
+#     pres_vec = pres_vec,
+#     first_non_NaN_temp = first_valid_index(col),
+#     last_non_NaN_temp = last_valid_index(col)
+#   )
+# })
+
+light_non_log <- exp(light)
+light_log <- light
+min_window = 4
+alpha = 0.01
+
+light_corrected_non_log <- light_non_log
+# light_corrected_non_log_temp <- light_non_log
+
+# Trouver les colonnes non vides dans `light`
+col_na_only <- apply(light_non_log, 2, function(col) all(is.na(col)))
+lightNonNan_non_log <- light_non_log[,!col_na_only]
+valid_cols <- which(!col_na_only)
+
+# Initialiser les vecteurs pour stocker les résultats
+PCST_vec <- rep(NA, ncol(lightNonNan_non_log))
+PDARK_vec <- rep(NA, ncol(lightNonNan_non_log))
+VDARK_vec <- rep(NA, ncol(lightNonNan_non_log))
+delta_for_cstLIGHT <- 1e-8 # define standard delta between min and max of profile to eliminate profile for being a constant profile
+max_depth <- nrow(light_non_log)
+
+# Boucle sur les indices des colonnes non vides
+for (ii_temp in valid_cols) {
+
+  # Initialiser les variables locales
+  PCST_temp <- MAX_CHLA_DEPTH
+  PDARK_temp <- MAX_CHLA_DEPTH
+  VDARK_temp <- 0
+
+  # Indices des premières et dernières valeurs non NA dans le profil
+  col_temp <- light_non_log[, ii_temp]
+  first_non_NaN_temp <- which(!is.na(col_temp))[1]
+  last_non_NaN_temp  <- tail(which(!is.na(col_temp)), 1)
   
-  last_non_na <- max(idx)
-  first_non_na <- min(idx)
+  # initialize cstDetect_temp used in cst test
+  cstDetect_temp <- 0
 
-  # balayage depuis la surface vers le fond pour chaque valeur
-  dark_idx <- last_non_na
-  for (j in seq(first_non_na, last_non_na - (min_window - 1))) 
-  {
-    window <- col_data[j:last_non_na]
-    if (length(window) >= min_window) 
-    {
-      # p.value
-      test_result <- tryCatch(shapiro.test(window), error = function(e) list(p.value = 0))
-      if (!is.null(test_result$p.value) && test_result$p.value > alpha) 
-      {
-        # si significtaive entre la valeur non nulle et le fond, à la premiere on prend cette indice là
-        dark_idx <- j
-        break
+  if ((last_non_NaN_temp - first_non_NaN_temp + 1) < 2) {
+    # Pas assez de points valides pour faire un test
+    ind_cst_temp <- last_non_NaN_temp + 1
+    PCST_temp <- NA
+  } else {
+    for (jj_temp in first_non_NaN_temp:(last_non_NaN_temp - 1)) {
+      # Calcul de l'amplitude (range) dans la partie profonde
+      range_temp <- diff(range(light_corrected_non_log[jj_temp:last_non_NaN_temp], na.rm = TRUE))
+
+      if (is.na(range_temp) || range_temp <= delta_for_cstLIGHT) {
+
+        # Signal considéré comme constant
+        cstDetect_temp <- 1
+        break # end for loop when range < delta_for_cstLIGHT (1e-8) i.e. LIGHT signal is considered constant in interval j:bottom
       }
+    }
+    # write index of first value belonging to dark signal
+    ind_cst_temp <- jj_temp + 1
+    # write depth of dark value
+    PCST_temp <- pres_vec[ind_cst_temp]
+  }
+
+  # Si signal constant détecté, on masque la partie cst (du fond vers le haut)
+  if (cstDetect_temp == 1) {
+    # On s’assure de ne pas dépasser la profondeur max
+    start_idx <- min(ind_cst_temp + 1, max_depth)
+    light_corrected_non_log[start_idx:max_depth, ii_temp] <- NA
+    last_non_NaN_temp <- ind_cst_temp - 1
+  }
+
+  h_temp <- 1 # Par défaut : signal considéré non normal (i.e., pas sombre)
+
+  if ((last_non_NaN_temp - first_non_NaN_temp + 1) < 4) {
+    # Pas assez de points pour un test valide
+    ind_dark_temp <- last_non_NaN_temp + 1
+    PDARK_temp <- NA
+    VDARK_temp <- NA
+    slop_temp <- NA
+    slopPART_temp <- NA
+  } else {
+    # Sampled vector X must have at least 4 valid observations
+    for (jj_temp in first_non_NaN_temp:(last_non_NaN_temp - 3)) {
+
+      # Sous-échantillon du profil lumière pour test de normalité
+      light_segment <- light_corrected_non_log[jj_temp:last_non_NaN_temp, ii_temp]
+      light_segment <- light_segment[!is.na(light_segment)]
+
+      # Test de normalité (Lilliefors ~ lillie.test dans package 'nortest')
+      if (length(light_segment) >= 4) {
+        test_result <- tryCatch(lillie.test(light_segment), error = function(e) NULL)
+
+        if (!is.null(test_result) && test_result$p.value > 0.01) {
+          h_temp <- 0  # Le segment suit une distribution normale : considéré sombre
+          break
+        }
+      }
+    }
+
+    # Déterminer l'indice et la profondeur associée au signal sombre
+    if (h_temp == 1) {
+      # Aucun test de normalité valide → prendre la dernière valeur
+      ind_dark_temp <- last_non_NaN_temp
+      PDARK_temp <- pres_vec[ind_dark_temp]
+      # VDARK_temp reste à 0 (déjà initialisé)
+    } else {
+      # Normalité détectée : on garde l'indice de cassure
+      ind_dark_temp <- jj_temp
+      PDARK_temp <- pres_vec[ind_dark_temp]
+      VDARK_temp <- median(light_corrected_non_log[ind_dark_temp:last_non_NaN_temp, ii_temp], na.rm = TRUE)
+    }
+
+    topdark_temp <- floor(pres_vec[ind_dark_temp]) ;
+    botdark_temp <- floor(pres_vec[last_non_NaN_temp]) + 1 ;
+
+    # Calcul de la pente d'atténuation totale
+    slop_temp <- (light_log[ind_dark_temp, ii_temp] - light_log[first_non_NaN_temp, ii_temp]) / (pres_vec[ind_dark_temp] - pres_vec[first_non_NaN_temp])
+
+    # Calcul de la pente partielle sur un intervalle d'intégration (150 = minimum lower boundary (bottom) required for profiles to be imported in linear functional model)
+    if (ind_dark_temp > 150) {
+      slopPART_temp <- (light_log[150, ii_temp] - light_log[first_non_NaN_temp, ii_temp]) / (pres_vec[min_botIntegBound] - pres_vec[first_non_NaN_temp])
+    } else {
+      slopPART_temp <- NA
     }
   }
 
-  # dark value = médiane des valeurs identifiées comme dark noise
-  dark_vals <- col_data[dark_idx:last_non_na]
-  dark_val <- median(dark_vals, na.rm = TRUE)
-  dark_val <- round(dark_val, 4)
-  
-  # cat(paste("dark_val : ", dark_val, "\n\n"))
+  # ============================
+  # Correction du profil LIGHT
+  # ============================
 
-  # correction du profil
-  corrected <- col_data - dark_val
+  # Indices à mettre à NaN (zones non fiables)
+  toNaN_temp <- unique(c(1:max(1, first_non_NaN_temp - 1), seq(min(ind_dark_temp + 1, MAX_CHLA_DEPTH, last_non_NaN_temp + 1), length(light_corrected_non_log[, ii_temp]))))
 
-  # valeurs négatives à NA
-  corrected[corrected <= 0] <- NA
-  
-  # interpolation linéaire
-  if (sum(!is.na(corrected)) >= 2) {
-    corrected <- na.approx(corrected, x = pres_vec, na.rm = FALSE)
+  # Suppression du signal sombre si détecté (h_temp = 0)
+  if (h_temp == 0) {
+    light_corrected_non_log[ind_dark_temp:nrow(light_corrected_non_log), ii_temp] <- NA
   }
-  return(corrected)
+
+  # Soustraction de la valeur sombre (dark value)
+  light_corrected_non_log[, ii_temp] <- light_corrected_non_log[, ii_temp] - VDARK_temp
+
+  # Remplacement des valeurs négatives par NaN
+  light_corrected_non_log[light_corrected_non_log[, ii_temp] <= 0, ii_temp] <- NA
+
+  # Interpolation linéaire si au moins 2 valeurs valides
+  n_values_temp <- sum(!is.na(light_corrected_non_log[, ii_temp]))
+  if (n_values_temp >= 2) {
+    vect_temp <- light_corrected_non_log[first_non_NaN_temp:last_non_NaN_temp, ii_temp]
+    vect_temp <- zoo::na.approx(vect_temp, na.rm = FALSE)
+    light_corrected_non_log[first_non_NaN_temp:last_non_NaN_temp, ii_temp] <- vect_temp
+    light_corrected_non_log[toNaN_temp, ii_temp] <- NA
+  }
+
+  # # Copie du profil corrigé pour affichage (profil final sans bruit sombre)
+  # light_corrected_non_log_temp[, ii_temp] <- light_corrected_non_log_temp[, ii_temp] - VDARK_temp
+  # # Valeurs négatives à 0
+  # light_corrected_non_log_temp[light_corrected_non_log_temp[, ii_temp] < 0, ii_temp] <- 0
 }
+# light_corrected_non_log <- apply(light_non_log, 2, function(col) correct_light_profile(col, light, pres_vec))
+light_corrected_log <- log(pmax(light_corrected_non_log, 1e-10))
+
+```
+
+```{r}
+
+  
+#   
+#   
+#   
+#   
+#   
+#   # indices valides
+#   idx <- which(!is.na(light_non_log) & light_non_log != 0)
+#   if (length(idx) < min_window) return(rep(NA, length(light_non_log)))
+#   
+#   last_non_na <- max(idx)
+#   first_non_na <- min(idx)
+# 
+#   # balayage depuis la surface vers le fond pour chaque valeur
+#   dark_idx <- last_non_na
+#   for (j in seq(first_non_na, last_non_na - (min_window - 1))) 
+#   {
+#     window <- light_non_log[j:last_non_na]
+#     if (length(window) >= min_window) 
+#     {
+#       # p.value
+#       test_result <- tryCatch(shapiro.test(window), error = function(e) list(p.value = 0))
+#       if (!is.null(test_result$p.value) && test_result$p.value > alpha) 
+#       {
+#         # si significtaive entre la valeur non nulle et le fond, à la premiere on prend cette indice là
+#         dark_idx <- j
+#         break
+#       }
+#     }
+#   }
+# 
+#   # dark value = médiane des valeurs identifiées comme dark noise
+#   dark_vals <- light_non_log[dark_idx:last_non_na]
+#   dark_val <- median(dark_vals, na.rm = TRUE)
+#   dark_val <- round(dark_val, 4)
+#   
+#   # cat(paste("dark_val : ", dark_val, "\n\n"))
+# 
+#   # correction du profil
+#   corrected <- light_non_log - dark_val
+# 
+#   # valeurs négatives à NA
+#   corrected[corrected <= 0] <- NA
+#   
+#   # interpolation linéaire
+#   if (sum(!is.na(corrected)) >= 2) {
+#     corrected <- na.approx(corrected, x = pres_vec, na.rm = FALSE)
+#   }
+#   return(corrected)
+# }
 
 # exp aux valeurs de lumière (en log) car pas de calculs en log (incorrect)
-light_subset_exp <- exp(light)
-light_subset_exp_round <- round(light_subset_exp, 4)
-
-light_corrected <- apply(light_subset_exp_round, 2, function(col) correct_light_profile(col, pres_vec))
-light_corrected_log <- log(pmax(light_corrected, 1e-10))
-
 ```
 
 <h4>Quenching depth, based on PAR15</h4>
@@ -408,13 +653,13 @@ quenchDepth_vec <- apply(light_corrected, 2, function(col) {
 <h4>Plotting one light profile, before and after dark value correction</h4>
 ```{r LightProfilePlot}
 
-id_profile = 12
+id_profile = 1
 
-plot(light_subset_exp_round[1:MAX_CHLA_DEPTH, id_profile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
-     ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])), xlim = c(0,0.005),
-     xlab = "Light (µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",id_profile," - Original and Corrected\n", SEAL_NAME))
+plot(light_non_log[1:MAX_CHLA_DEPTH, id_profile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
+     ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])), xlim = c(0, 3e-4),
+     xlab = "Light ln(µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",id_profile," - Original and Corrected\n", SEAL_NAME))
 
-lines(light_corrected[1:MAX_CHLA_DEPTH, id_profile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
+lines(light_corrected_non_log[1:MAX_CHLA_DEPTH, id_profile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
 legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
 
 abline(h = quenchDepth_vec[id_profile], col = "cyan", lty = 2)
@@ -427,28 +672,29 @@ legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purp
 
 <h4>Plotting all light profiles, before and after dark value correction</h4>
 ```{r PlotAllProfiles-original&Corrected}
-matplot(light_subset_exp[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
+matplot(light[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
-        xlab = "Light (µmol/m²/s)",
+        xlab = "Light ln(µmol/m²/s)",
         ylab = "Depth (m)",
         main = paste0("Light profiles : ", SEAL_NAME))
 grid()
 
-matplot(light_corrected[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
+matplot(light_corrected_log[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         type = "l",
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
-        xlab = "Light (µmol/m²/s)",
+        xlab = "Light ln(µmol/m²/s)",
         ylab = "Depth (m)",
         main = paste0("Light profiles corrected : ", SEAL_NAME))
 grid()
 
 ```
-<h4>Total light for each profile (not corrected). May be better to plot this after data correction.</h4>
+
+<h4>Total light for each profile</h4>
 ```{r Total-Light}
-light_subset <- light_corrected[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_preprocess1_nonNan2 : erasing NaN profiles
+light_subset <- light_corrected_log[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_preprocess1_nonNan2 : erasing NaN profiles
 
 total_light <- colSums(light_subset, na.rm = TRUE)
 profil_names <- as.character(seq_along(total_light))
@@ -467,7 +713,7 @@ plot(
 # axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
 ```
 
-<h4>Saving and classifying light profiles (condition does not seem strong enough)<h4>
+<h4>Saving and classifying light profiles (condition does not seem strong enough)</h4>
 ```{r SaveAndClassifyLightProfiles}
 
 dir_standard = "profils_light_standard"
@@ -528,73 +774,83 @@ cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 
 <h4>Dark-value correction for Chl-a profiles (only works for some profiles, investigating where the code is incorrect)</h4>
 ```{r DarkValue_chla}
-
-
 correct_chla_profile_matlab <- function(col_data, pres_vec,
-                                        prof_depth = 10,
-                                        delta_for_cstCHLA = 0.01,
-                                        maxCHLA_depth = 175) 
+                                        darkDepthDelta_temp = 10,
+                                        delta_for_cstCHLA = 0.01)
 {
-  # Vérifier les données valides sur l'ensemble du profil
-  if (all(is.na(col_data))) {
-    return(list(corrected = rep(NA, length(col_data)), 
-                dark_val = NA, 
-                PDARK_temp = NA))
+  max_depth <- nrow(col_data)  # utile pour construire les matrices
+  n_prof <- ncol(col_data)
+
+  # Vérifier que le profil atteint la profondeur désirée
+  if (MAX_CHLA_DEPTH > max_depth) {
+    stop("Le profil ne descend pas jusqu'à MAX_CHLA_DEPTH.")
   }
 
-  # Indices de la zone profonde (comme dans MATLAB)
-  idx_bottom <- which(pres_vec >= (maxCHLA_depth - prof_depth + 1) & pres_vec <= maxCHLA_depth)
+  # Indices de la tranche profonde à analyser
+  deep_indices <- (MAX_CHLA_DEPTH - (darkDepthDelta_temp - 1)) : MAX_CHLA_DEPTH
+  
+  # Initialiser la matrice des valeurs CHLA corrigées
+  CHLA_nadRegDk <- matrix(NA, nrow = max_depth, ncol = n_prof)
+  darkDepth_vec <- rep(NA, n_prof)
 
-  # Récupérer les valeurs CHLA dans cette tranche
-  deep_values <- col_data[idx_bottom]
+  for (ii in 1:n_prof) {
+    profile <- col_data[, ii]
 
-  # Calcul du dark_val (valeur médiane des 10 derniers mètres ou proche)
-  if (!all(is.na(deep_values))) {
-    dark_val <- median(deep_values, na.rm = TRUE)
-  } else {
-    # Simule le 'fillmissing(..., "nearest")' de MATLAB
-    valid_idx <- which(!is.na(col_data))
-    if (length(valid_idx) > 0) {
-      center_depth <- median(pres_vec[idx_bottom], na.rm = TRUE)
-      target_idx <- which.min(abs(pres_vec[valid_idx] - center_depth))
-      dark_val <- col_data[valid_idx[target_idx]]
-    } else {
-      return(list(corrected = rep(NA, length(col_data)), 
-                  dark_val = NA, 
-                  PDARK_temp = NA))
+    if (all(is.na(profile))) {
+      next  # Profil entièrement vide
     }
-  }
 
-  # Appliquer le dark_val à tout le profil
-  corrected <- col_data - dark_val
+    # Calcul de l'offset à partir des profondeurs profondes
+    chla_deep <- profile[deep_indices]
+    dark_val <- median(chla_deep, na.rm = TRUE)
 
-  # Mettre à zéro les valeurs négatives
-  corrected[corrected < 0] <- 0
+    if (is.na(dark_val)) {
+      dark_val <- 0  # Valeur de secours si tout est NA
+    }
 
-  # Détection du plateau constant profond
-  PDARK_temp <- NA
-  first_non_na <- which(!is.na(corrected))[1]
-  last_non_na <- tail(which(!is.na(corrected)), 1)
+    profile_corrected <- profile - dark_val
+    profile_corrected[profile_corrected < 0] <- 0  # Forcer à 0 les négatifs
 
-  if (!is.na(first_non_na) && !is.na(last_non_na) && (last_non_na - first_non_na + 1) >= 2) {
-    for (j in first_non_na:(last_non_na - 1)) {
-      window <- corrected[j:last_non_na]
-      amplitude <- max(window, na.rm = TRUE)
-      if (amplitude <= delta_for_cstCHLA) {
-        ind_dark_temp <- j + 1
-        corrected[ind_dark_temp:last_non_na] <- 0
-        PDARK_temp <- pres_vec[ind_dark_temp]
+    CHLA_nadRegDk[, ii] <- profile_corrected
+
+    # Détection de plateau constant profond (PDARK: où la chlorophylle est constante)
+    idx_non_na <- which(!is.na(profile_corrected))
+    if (length(idx_non_na) < 2) {
+      darkDepth_vec[ii] <- NA
+      next
+    }
+
+    first_idx <- idx_non_na[1]
+    last_idx <- tail(idx_non_na, 1)
+
+    PDARK_temp <- MAX_CHLA_DEPTH + 1
+
+    for (jj in first_idx:(last_idx - 1)) {
+      # Calcul de l'amplitude maximale de la CHLA du point jj jusqu'à la fin du profil
+      amplitude <- suppressWarnings(max(profile_corrected[jj:last_idx], na.rm = TRUE))
+      # Si l'amplitude est très faible (donc profil plat) ou non définie (NA), on considère que la zone sombre commence ici
+      if (is.na(amplitude) || amplitude <= delta_for_cstCHLA) {
+        idx_dark_temp <- jj + 1
+        # Mise à zéro de toutes les valeurs CHLA à partir de cette profondeur (zone sombre détectée)
+        profile_corrected[idx_dark_temp:last_idx] <- 0
+        PDARK_temp <- pres_vec[idx_dark_temp]
         break
       }
     }
+    CHLA_nadRegDk[, ii] <- profile_corrected
+    darkDepth_vec[ii] <- PDARK_temp
   }
 
-  return(list(corrected = corrected, 
-              dark_val = dark_val, 
-              PDARK_temp = PDARK_temp))
+  return(list(
+    corrected = CHLA_nadRegDk,
+    darkDepth = darkDepth_vec
+  ))
 }
 
-result_list <- lapply(1:ncol(chla), function(i) correct_chla_profile_matlab(chla[, i], pres_vec))
+
+result_list <- lapply(seq_len(ncol(chla)), function(i) {
+  correct_chla_profile_matlab(chla[, i, drop = FALSE], pres_vec)
+})
 
 ```
 
@@ -605,18 +861,18 @@ chla_corrected <- sapply(result_list, function(x) x$corrected)   # matrice de pr
 dark_vals <- sapply(result_list, function(x) x$dark_val)         # vecteur
 PDARK_vals <- sapply(result_list, function(x) x$PDARK_temp)      # vecteur
 
-# Et on peut tout sauvegarder dans une structure de type data.frame
+# sauvegardés dans une structure de type data.frame
 chlaData <- data.frame(
   darkValProfile = dark_vals,
   darkDepth = PDARK_vals
 )
 
-nprofile=13
+nprofile=5
 
 # Plot only one of the 150
 plot(chla[1:MAX_CHLA_DEPTH, nprofile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
      ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
-     xlim = range(c(0,0.05)), #range(c(chla[1:MAX_CHLA_DEPTH, nprofile], chla_corrected[1:MAX_CHLA_DEPTH, nprofile])),
+     xlim = range(c(0,2)), #range(c(chla[1:MAX_CHLA_DEPTH, nprofile], chla_corrected[1:MAX_CHLA_DEPTH, nprofile])),
      xlab = "Chl-a (mg/m³)", ylab = "Depth (m)", main = paste("Chl-a profile (DK)", nprofile, "-", SEAL_NAME))
 
 lines(chla_corrected[1:MAX_CHLA_DEPTH, nprofile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
@@ -737,14 +993,14 @@ npqCorrDepth <- result$npqCorrDepth
 
 <h4>Plotting NPQ correction for Chl-a</h4>
 ```{r NPQ_plot}
-nprofile <- 12
+nprofile <- 5
 
 plot(
   chla[1:MAX_CHLA_DEPTH, nprofile],
   pres_vec[1:MAX_CHLA_DEPTH],
   type = "l", col = "blue",
   ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
-  xlim = range(c(0,0.05)),#range(c(chla[1:MAX_CHLA_DEPTH, nprofile], chla_corrected[1:MAX_CHLA_DEPTH, nprofile]), na.rm = TRUE),
+  xlim = range(c(0,2)),#range(c(chla[1:MAX_CHLA_DEPTH, nprofile], chla_corrected[1:MAX_CHLA_DEPTH, nprofile]), na.rm = TRUE),
   xlab = "Chl-a", ylab = "Depth",
   main = paste("Profil", nprofile, "-", SEAL_NAME)
 )
