@@ -1,0 +1,282 @@
+---
+title: "deploy_profiles_analysis"
+author: "Claude Cugerone"
+date: "2025-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<h2>Metadata analysis</h2>
+<h4>Date interval for each individual</h4>
+```{r}
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+DEPLOY_FOLDER <- "wd12"
+DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+
+nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+ranges_list <- list()
+
+for (nc_file in nc_files) {
+  nc_data <- nc_open(nc_file)
+  juld <- ncvar_get(nc_data, "JULD")
+
+  dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
+  dateTime <- round(dateTime, units = "mins")
+
+  ranges_list[[basename(nc_file)]] <- range(dateTime, na.rm = TRUE)
+  nc_close(nc_data)
+}
+
+for (file_name in names(ranges_list)) {
+  cat("\nFichier:", file_name, "\n")
+  print(ranges_list[[file_name]])
+}
+```
+<h4>Number of profiles per individual</h4>
+```{r}
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+DEPLOY_FOLDER <- "wd11"
+DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+
+nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+profiles_list <- list()
+
+for (nc_file in nc_files)
+{
+  nc_data <- nc_open(nc_file)
+
+  profiles_data <- ncvar_get(nc_data, "LIGHT")
+
+  num_profiles <- dim(profiles_data)[2]
+
+  profiles_list[[basename(nc_file)]] <- num_profiles
+
+  nc_close(nc_data)
+}
+
+for (file_name in names(profiles_list)) {
+  cat("\nFichier:", file_name, "\n")
+  cat("Nombre de profils de lumière:", profiles_list[[file_name]], "\n")
+}
+
+```
+
+```{r}
+library(ncdf4)
+library(ggplot2)
+library(dplyr)
+
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+#deployments <- c("wd10", "wd11", "wd12", "wd13", "wd19", "wd20", "wd31")
+deployments <- c("wd11", "wd12", "wd20", "wd31") # winter
+#deployments <- c("wd10", "wd13", "wd19") # summer
+
+# Dataframe pour stocker tout
+all_profiles <- data.frame()
+
+for (DEPLOY_FOLDER in deployments) {
+  DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+  nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+
+  for (nc_file in nc_files) {
+    nc_data <- nc_open(nc_file)
+    juld <- ncvar_get(nc_data, "JULD")
+    nc_close(nc_data)
+
+    dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
+    dateTime <- round(dateTime, units = "mins")
+
+    # Création d'une entrée par profil (valeur de JULD)
+    profiles <- data.frame(
+      dateTime = dateTime,
+      deployment = DEPLOY_FOLDER,
+      file = basename(nc_file)
+    )
+
+    all_profiles <- bind_rows(all_profiles, profiles)
+  }
+}
+
+ggplot(all_profiles, aes(x = dateTime, y = deployment)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  theme_minimal() +
+  labs(title = "Distribution temporelle des profils par déploiement",
+       x = "Date",
+       y = "Déploiement") +
+  theme(axis.text.y = element_text(face = "bold"))
+
+
+```
+
+
+```{r}
+
+library(ncdf4)
+library(dplyr)
+library(ggplot2)
+
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+#deployments <- c("wd10", "wd11", "wd12", "wd13", "wd19", "wd20", "wd31")
+deployments <- c("wd11", "wd12", "wd20", "wd31") # winter
+#deployments <- c("wd10", "wd13", "wd19") # summer
+
+profile_counts <- data.frame()
+
+for (DEPLOY_FOLDER in deployments) {
+  DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+  nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+
+  for (nc_file in nc_files) {
+    nc_data <- nc_open(nc_file)
+    juld <- ncvar_get(nc_data, "JULD")
+    nc_close(nc_data)
+
+    n_profiles <- length(juld)
+    file_name <- basename(nc_file)
+    
+    individual <- sub("_.*$", "", tools::file_path_sans_ext(file_name))
+
+    profile_counts <- bind_rows(profile_counts, data.frame(
+      deployment = DEPLOY_FOLDER,
+      individual = individual,
+      n_profiles = n_profiles
+    ))
+  }
+}
+
+ggplot(profile_counts, aes(x = individual, y = n_profiles, fill = deployment)) +
+  geom_col() +
+  theme_minimal() +
+  labs(title = "Number of profiles by seal",
+       x = "Seal",
+       y = "NNumber of profiles") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+library(ncdf4)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+#deployments <- c("wd10", "wd11", "wd12", "wd13", "wd19", "wd20", "wd31")
+deployments <- c("wd11", "wd12", "wd20", "wd31") # winter
+#deployments <- c("wd10", "wd13", "wd19") # summer
+
+all_profiles <- data.frame()
+
+for (DEPLOY_FOLDER in deployments) {
+  DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+  nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+
+  for (nc_file in nc_files) {
+    nc_data <- nc_open(nc_file)
+    juld <- ncvar_get(nc_data, "JULD")
+    nc_close(nc_data)
+
+    dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
+    dateTime <- round(dateTime, units = "mins")
+
+    individual <- tools::file_path_sans_ext(basename(nc_file))
+
+    if (length(dateTime) > 0) {
+      profiles <- data.frame(
+        dateTime = dateTime,
+        month_year = format(dateTime, "%Y %b"),
+        deployment = DEPLOY_FOLDER,
+        individual = individual
+      )
+
+      all_profiles <- bind_rows(all_profiles, profiles)
+    }
+  }
+}
+
+# Grouper les profils par mois et déploiement
+summary_profiles <- all_profiles %>%
+  group_by(deployment, month_year) %>%
+  summarise(n_profiles = n(), .groups = "drop")
+
+# Transformer en facteur ordonné pour garder l'ordre temporel
+summary_profiles$month_year <- as.factor(summary_profiles$month_year)
+summary_profiles$month_year <- factor(summary_profiles$month_year,
+                                      levels = sort(unique(summary_profiles$month_year)))
+
+ggplot(summary_profiles, aes(x = month_year, y = deployment, fill = n_profiles)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "plasma", name = "Nb profiles") +
+  theme_minimal() +
+  labs(title = "Temporal distribtuion of profiles by deployment",
+       x = "Month/Year", y = "Deployment") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+library(ncdf4)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+DATA_FOLDER <- "oceanographic_data"
+deployments <- c("wd11", "wd12", "wd20", "wd31")  # hiver
+
+all_profiles <- data.frame()
+
+for (DEPLOY_FOLDER in deployments) {
+  DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
+  nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
+
+  for (nc_file in nc_files) {
+    nc_data <- nc_open(nc_file)
+    juld <- ncvar_get(nc_data, "JULD")
+    nc_close(nc_data)
+
+    dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
+    dateTime <- round(dateTime, units = "mins")
+
+    individual <- sub("_.*$", "", tools::file_path_sans_ext(basename(nc_file)))
+
+    if (length(dateTime) > 0) {
+      profiles <- data.frame(
+        dateTime = dateTime,
+        deployment = DEPLOY_FOLDER,
+        individual = individual
+      )
+
+      all_profiles <- bind_rows(all_profiles, profiles)
+    }
+  }
+}
+
+# Ajouter une colonne "mois"
+all_profiles <- all_profiles %>%
+  mutate(month = floor_date(dateTime, "month"))
+
+# Compter les profils par mois et déploiement
+monthly_counts <- all_profiles %>%
+  group_by(deployment, month) %>%
+  summarise(n_profiles = n(), .groups = "drop")
+
+# Affichage histogramme horizontal
+ggplot(monthly_counts, aes(x = month, y = n_profiles)) +
+  geom_col(fill = "steelblue") +
+  facet_wrap(~deployment, ncol = 1, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Histogramme temporel des profils par déploiement", x = "Date", y = "Nombre de profils") +
+  scale_x_datetime(date_breaks = "4 months", date_labels = "%b %Y") +
+  coord_cartesian(ylim = c(0, 300)) +   # fixe le y
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
