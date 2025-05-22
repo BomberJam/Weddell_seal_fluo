@@ -1,0 +1,53 @@
+---
+title: "Other"
+author: "Claude Cugerone"
+date: "2025-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<h2>Other</h2>
+<h4>Cemetery : Unused code, but may be useful one day.</h4>
+```{r Cemetery}
+# COUCHE EUPHO
+# pas utile pour le moment (attention code peut etre faux)
+
+# # Calculer Zeu : première profondeur où la lumière < 1% (log-scale)
+# zeuDep_temp <- apply(light, 2, function(col) {
+#   idx <- which(col < -log(100))[1]  # première position vraie
+#   if (is.na(idx)) NA else idx       # si rien trouvé, mettre NA
+# })
+# 
+# # Remplacer les 0 (si jamais) par NA (équivalent MATLAB)
+# zeuDep_temp[zeuDep_temp == 0] <- NA
+# 
+# # Stocker dans la structure lightData
+# Zeu <- zeuDep_temp
+
+
+# PAR 15
+# light_non_log <- exp(light_corrected)
+# par15_depths <- rep(NA, ncol(light_non_log))  # vecteur pour stocker les profondeurs
+# 
+# for (i in 1:ncol(light_non_log)) {
+#   below15 <- which(light_non_log[, i] < 15)
+#   if (length(below15) > 0) {
+#     # On prend la première profondeur où light < 15
+#     par15_depths[i] <- pres[min(below15), i]
+#   }
+# }
+
+# RSD
+# # Calcul écart type et moyenne)
+#   stdChla <- sd(chla_profile, na.rm = TRUE)
+#   meanChla <- mean(chla_profile, na.rm = TRUE)
+# 
+#   # Calcul du RSD si la moyenne est non nulle
+#   if (!is.na(meanChla) && meanChla != 0) {
+#     rsd[ii_temp] <- stdChla / meanChla
+#   }
+
+```

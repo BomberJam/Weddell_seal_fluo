@@ -1,0 +1,10 @@
+
+*.tif
+
+*.nc
+
+*.png
+
+.Rhistory
+
+.RData

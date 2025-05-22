@@ -1,0 +1,330 @@
+char DATA_TYPE[STRING16]   
+            comment: Data type
+            _FillValue:  
+        char FORMAT_VERSION[STRING4]   
+            comment: File format version
+            _FillValue:  
+        char HANDBOOK_VERSION[STRING4]   
+            comment: Data handbook version
+            _FillValue:  
+        char REFERENCE_DATE_TIME[DATE_TIME]   
+            comment: Date of reference for Julian days
+            conventions: YYYYMMDDHHMISS
+            _FillValue:  
+        char DATE_CREATION[DATE_TIME]   
+            comment: Date of file creation
+            conventions: YYYYMMDDHHMISS
+            _FillValue:  
+        char DATE_UPDATE[DATE_TIME]   
+            long_name: Date of update of this file
+            conventions: YYYYMMDDHHMISS
+            _FillValue:  
+        char PLATFORM_NUMBER[STRING8,N_PROF]   
+            long_name: Float unique identifier
+            conventions: WMO float identifier : A9IIIII
+            _FillValue:  
+        char PROJECT_NAME[STRING64,N_PROF]   
+            comment: Name of the project
+            _FillValue:  
+        char PI_NAME[STRING64,N_PROF]   
+            comment: Name of the principal investigator
+            _FillValue:  
+        char STATION_PARAMETERS[STRING16,N_PARAM,N_PROF]   
+            long_name: List of available parameters for the station
+            conventions: Argo reference table 3
+            _FillValue:  
+        int CYCLE_NUMBER[N_PROF]   
+            long_name: Float cycle number
+            units: 1
+            conventions: 0..N, 0 : launch cycle (if exists), 1 : first complete cycle
+            _FillValue: 99999
+        char DIRECTION[N_PROF]   
+            long_name: Direction of the station profiles
+            conventions: A: ascending profiles, D: descending profiles
+            _FillValue:  
+        char DATA_CENTRE[STRING2,N_PROF]   
+            long_name: Data centre in charge of float data processing
+            conventions: Argo reference table 4
+            _FillValue:  
+        char DC_REFERENCE[STRING32,N_PROF]   
+            long_name: Station unique identifier in data centre
+            conventions: Data centre convention
+            _FillValue:  
+        char DATA_STATE_INDICATOR[STRING4,N_PROF]   
+            long_name: Degree of processing the data have passed through
+            conventions: Argo reference table 6
+            _FillValue:  
+        char DATA_MODE[N_PROF]   
+            long_name: Delayed mode or real time data
+            conventions: R : real time; D : delayed mode; A : real time with adjustment
+            _FillValue:  
+        char INST_REFERENCE[STRING64,N_PROF]   
+            long_name: Instrument type
+            conventions: Brand, type, serial number
+            _FillValue:  
+        char WMO_INST_TYPE[STRING4,N_PROF]   
+            long_name: Coded instrument type
+            conventions: Argo reference table 8
+            _FillValue:  
+        double JULD[N_PROF]   
+            long_name: Julian day (UTC) of the station relative to REFERENCE_DATE_TIME
+            units: days since 1950-01-01 00:00:00 UTC
+            calendar: julian
+            conventions: Relative julian days with decimal part (as parts of day)
+            _FillValue: 99999
+        char JULD_QC[N_PROF]   
+            long_name: Quality on Date and Time
+            conventions: Argo reference table 2
+            _FillValue:  
+        double JULD_LOCATION[N_PROF]   
+            long_name: Julian day (UTC) of the location relative to REFERENCE_DATE_TIME
+            units: days since 1950-01-01 00:00:00 UTC
+            calendar: julian
+            conventions: Relative julian days with decimal part (as parts of day)
+            _FillValue: 99999
+        double LATITUDE[N_PROF]   
+            long_name: Latitude of the station, best estimate
+            units: degree_north
+            _FillValue: 99999
+            valid_min: -90
+            valid_max: 90
+        double LONGITUDE[N_PROF]   
+            long_name: Longitude of the station, best estimate
+            units: degree_east
+            _FillValue: 99999
+            valid_min: -180
+            valid_max: 180
+        char POSITION_QC[N_PROF]   
+            long_name: Quality on position (latitude and longitude)
+            conventions: Argo reference table 2
+            _FillValue:  
+        char POSITIONING_SYSTEM[STRING8,N_PROF]   
+            long_name: Positioning system
+            _FillValue:  
+        char PROFILE_PRES_QC[N_PROF]   
+            long_name: Global quality flag of PRES profile
+            conventions: Argo reference table 2a
+            _FillValue:  
+        char PROFILE_PSAL_QC[N_PROF]   
+            long_name: Global quality flag of PSAL profile
+            conventions: Argo reference table 2a
+            _FillValue:  
+        char PROFILE_TEMP_QC[N_PROF]   
+            long_name: Global quality flag of TEMP profile
+            conventions: Argo reference table 2a
+            _FillValue:  
+        float PRES[N_LEVELS,N_PROF]   
+            long_name: SEA PRESSURE
+            units: decibar
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 12000
+            comment: In situ measurement, sea surface = 0
+        char PRES_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float PRES_ADJUSTED[N_LEVELS,N_PROF]   
+            long_name: SEA PRESSURE
+            units: decibar
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 12000
+            comment: In situ measurement, sea surface = 0
+        char PRES_ADJUSTED_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float PRES_ADJUSTED_ERROR[N_LEVELS,N_PROF]   
+            long_name: SEA PRESSURE
+            units: decibar
+            _FillValue: 99999
+            comment: Contains the error on the adjusted values as determined by the delayed mode QC process.
+        float TEMP[N_LEVELS,N_PROF]   
+            long_name: SEA TEMPERATURE IN SITU ITS-90 SCALE
+            units: degree_Celsius
+            _FillValue: 99999
+            valid_min: -2
+            valid_max: 40
+            comment: In situ measurement
+        char TEMP_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float TEMP_ADJUSTED[N_LEVELS,N_PROF]   
+            long_name: SEA TEMPERATURE IN SITU ITS-90 SCALE
+            units: degree_Celsius
+            _FillValue: 99999
+            valid_min: -2
+            valid_max: 40
+            comment: In situ measurement
+        char TEMP_ADJUSTED_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float TEMP_ADJUSTED_ERROR[N_LEVELS,N_PROF]   
+            long_name: SEA TEMPERATURE ERROR IN SITU ITS-90 SCALE
+            units: degree_Celsius
+            _FillValue: 99999
+            comment: Contains the error on the adjusted values as determined by the delayed mode QC process.
+        float PSAL[N_LEVELS,N_PROF]   
+            long_name: PRACTICAL SALINITY
+            units: 1e-3
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 42
+            comment: In situ measurement
+        char PSAL_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float PSAL_ADJUSTED[N_LEVELS,N_PROF]   
+            long_name: ADJUSTED PRACTICAL SALINITY
+            units: 1e-3
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 42
+            comment: In situ measurement
+        char PSAL_ADJUSTED_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float PSAL_ADJUSTED_ERROR[N_LEVELS,N_PROF]   
+            long_name: PRACTICAL SALINITY ERROR
+            units: 1e-3
+            _FillValue: 99999
+            comment: Contains the error on the adjusted values as determined by the delayed mode QC process.
+        char PROFILE_CHLA_QC[N_PROF]   
+            long_name: Global quality flag of CHLA profile
+            conventions: Argo reference table 2a
+            _FillValue:  
+        float CHLA[N_LEVELS,N_PROF]   
+            long_name: CHLOROPHYLL-A
+            units: mg/m3
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 10
+            comment: In situ measurement
+        char CHLA_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float CHLA_ADJUSTED[N_LEVELS,N_PROF]   
+            long_name: CHLOROPHYLL-A
+            units: mg/m3
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 10
+            comment: In situ measurement
+        char CHLA_ADJUSTED_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float CHLA_ADJUSTED_ERROR[N_LEVELS,N_PROF]   
+            long_name: CHLOROPHYLL-A
+            units: mg/m3
+            _FillValue: 99999
+            comment: Contains the error on the adjusted values as determined by the delayed mode QC process.
+        char PROFILE_LIGHT_QC[N_PROF]   
+            long_name: Global quality flag of LIGHT profile
+            conventions: Argo reference table 2a
+            _FillValue:  
+        float LIGHT[N_LEVELS,N_PROF]   
+            long_name: ln(PPFD)
+            units: ln(µmol/m²/s)
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 600
+            comment: In situ measurement
+        char LIGHT_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float LIGHT_ADJUSTED[N_LEVELS,N_PROF]   
+            long_name: ln(PPFD)
+            units: ln(µmol/m²/s)
+            _FillValue: 99999
+            valid_min: 0
+            valid_max: 600
+            comment: In situ measurement
+        char LIGHT_ADJUSTED_QC[N_LEVELS,N_PROF]   
+            long_name: quality flag
+            conventions: Argo reference table 2
+            _FillValue:  
+        float LIGHT_ADJUSTED_ERROR[N_LEVELS,N_PROF]   
+            long_name: ln(PPFD)
+            units: ln(µmol/m²/s)
+            _FillValue: 99999
+            comment: Contains the error on the adjusted values as determined by the delayed mode QC process.
+        char PARAMETER[STRING16,N_PARAM,N_CALIB,N_PROF]   
+            long_name: List of parameters with calibration information
+            conventions: Argo reference table 3
+            _FillValue:  
+        char SCIENTIFIC_CALIB_EQUATION[STRING256,N_PARAM,N_CALIB,N_PROF]   
+            long_name: Calibration equation for this parameter
+            _FillValue:  
+        char SCIENTIFIC_CALIB_COEFFICIENT[STRING256,N_PARAM,N_CALIB,N_PROF]   
+            long_name: SRDL identifier in the SMRU database
+            _FillValue:  
+
+     12 dimensions:
+        DATE_TIME  Size:14 (no dimvar)
+        STRING256  Size:256 (no dimvar)
+        STRING64  Size:64 (no dimvar)
+        STRING32  Size:32 (no dimvar)
+        STRING16  Size:16 (no dimvar)
+        STRING8  Size:8 (no dimvar)
+        STRING4  Size:4 (no dimvar)
+        STRING2  Size:2 (no dimvar)
+        N_PROF  Size:150 (no dimvar)
+        N_PARAM  Size:5 (no dimvar)
+        N_LEVELS  Size:1000 (no dimvar)
+        N_CALIB  Size:1 (no dimvar)
+
+    46 global attributes:
+        comment:  
+        number_of_ts_profiles: 149
+        number_of_t_profiles: 150
+        number_chla_profiles: 114
+        number_doxy_profiles: 0
+        number_light_profiles: 114
+        geospatial_lat_min: -66.807
+        geospatial_lat_max: -66.5439
+        geospatial_lon_min: 139.46
+        geospatial_lon_max: 140.6265
+        pi_name: CNRSPEPS
+        data_type: Marine mammals time-series data
+        format_version: 1.1
+        date_update: 2023-02-15T09:22:01Z
+        version_database: MEOP-CTD_2020-10-20
+        PI: CNRSPEPS
+        reference_file_name: wd11-687-18_prof.nc
+        is_the_data_public: no: data cannot be used without the prior consent of the data owner
+        nation: FRANCE
+        deployment_code: wd11
+        source: Marine mammal observation
+        data_mode: D
+        references: http://www.meop.net
+        reference_doi:  
+        Conventions: CF-1.6 Sea-mammals-1.1
+        Netcdf_version: 3.6
+        naming_authority: MEOP consortium (Marine Mammals Exploring the Oceans Pole to Pole)
+        cdm_data_type: Station
+        geospatial_vertical_min: 0
+        geospatial_vertical_max: 2000
+        data_assembly_center: MEOP/Fabien Roquet (MISU)
+        distribution_statement: Follow MEOP data policy standards, cf. http://www.meop.net/the-dataset/data-access.html. Data available free of charge. User assumes all risk for use of data. User must display citation in any publication or product using data. User must contact PI prior to any commercial use of data
+        citation: The marine mammal data were collected and made freely available by the International MEOP Consortium and the national programs that contribute to it (http://www.meop.net).
+        thermal_lag_adjustment: yes
+        platform_code: 80814
+        wmo_platform_code: Q9901180
+        smru_platform_code: wd11-687-18
+        species: Weddell seal
+        time_coverage_start: 2019-02-03T00:00:00Z
+        time_coverage_end: 2019-04-07T00:00:00Z
+        location: Weddell Sea
+        loc_algorithm: K
+        firmware_version: 209
+        firmware_parameters: FTD_PCAWED_LT_18A
+        instr_id: 14687
+        ptt: 67834

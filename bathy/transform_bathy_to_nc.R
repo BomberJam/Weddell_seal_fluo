@@ -1,0 +1,6 @@
+library(raster)
+r <- raster("/Users/saralabrousse/Dropbox/CNRS/2025_fluo_analysis/divers/bathy/ETOPO1_Bed_g_gdal.grd")
+str(r)
+library(ncdf4)
+rnc <- writeRaster(r, filename="/Users/saralabrousse/Dropbox/Postdoc_LOCEAN/fluo_Loic/ETOPO1_Bed_g_gdal.nc", format="CDF", overwrite=TRUE)
+plot(r)
