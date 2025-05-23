@@ -1,10 +1,7 @@
+# Ignorer tout
+*
 
-*.tif
-
-*.nc
-
-*.png
-
-.Rhistory
-
-.RData
+# Mais pas ces fichiers-là :
+!.gitignore
+!README.md
+!*.Rmd

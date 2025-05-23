@@ -9,12 +9,18 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r packages, include=FALSE}
+library(ncdf4)
+library(ggplot2)
+
+```
+
 <h2>Metadata analysis</h2>
 <h4>Date interval for each individual</h4>
 ```{r}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 DATA_FOLDER <- "oceanographic_data"
-DEPLOY_FOLDER <- "wd12"
+DEPLOY_FOLDER <- "wd11"
 DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
 
 nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
@@ -40,7 +46,7 @@ for (file_name in names(ranges_list)) {
 ```{r}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 DATA_FOLDER <- "oceanographic_data"
-DEPLOY_FOLDER <- "wd11"
+DEPLOY_FOLDER <- "wd12"
 DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
 
 nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)

@@ -39,7 +39,7 @@ ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data"
 DEPLOY_FOLDER <- "wd11"
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-682-17")
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-909-18")
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 ```
@@ -174,7 +174,7 @@ ggplot(df_mld, aes(x = profile, y = value)) +
   geom_point(shape = 4, color = "blue") +
   geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "red", linewidth = 0.25, se = FALSE) +
   scale_y_reverse() +
-  labs(x = "Profil", y = "MLD (m)", title = "Profondeur de la couche mélangée (MLD)") +
+  labs(x = "Profile", y = "Depth (m)", title = "Mixed Layer Depth (MLD)") +
   theme_minimal()
 
 ```
@@ -194,6 +194,7 @@ light_non_log <- exp(raw_light)
 light_log <- raw_light
 min_window = 4
 alpha = 0.01
+min_botIntegBound = 150
 
 light_corrected_non_log <- light_non_log
 # light_corrected_non_log_temp <- light_non_log
@@ -383,6 +384,7 @@ grid()
 
 matplot(light_corrected_log[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         type = "l",
+        xlim = c(-10,10),
         ylim = rev(c(0, MAX_CHLA_DEPTH)),
         lty = 1,
         xlab = "Light ln(µmol/m²/s)",
@@ -394,23 +396,24 @@ grid()
 
 <h4>Total light for each profile</h4>
 ```{r Total-Light}
-light_subset <- light_corrected_log[1:MAX_CHLA_DEPTH, !col_na_only] # sesf031_light_data_preprocess1_nonNan2 : erasing NaN profiles
+light_subset <- light_corrected_non_log [1:MAX_CHLA_DEPTH, !col_na_only]
 
 total_light <- colSums(light_subset, na.rm = TRUE)
-profil_names <- as.character(seq_along(total_light))
 
 plot(
   total_light,
   type = "b",                     
   pch = 18,                        
   col = "blue",
-  xlab = "Profil n°",
+  xlab = "",
   ylab = "Total lumière (µmol/m²/s)",
   main = paste0("Lumière totale par profile : ", SEAL_NAME),
-  xaxt = "n"                       
+  xaxt = "n"  # Supprime l'axe x par défaut
 )
 
-# axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
+# Ajout d'un axe x avec les dates
+axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2, cex.axis = 0.7)
+
 ```
 
 <h4>Saving and classifying light profiles (condition does not seem strong enough)</h4>
@@ -681,22 +684,22 @@ legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purp
 <h4>Computing total fluo per profile after correction</h4>
 ```{r TotalChla}
 chla_subset <- chla_corrected_q [1:MAX_CHLA_DEPTH, !col_na_only]
-
 total_chla <- colSums(chla_subset, na.rm = TRUE)
-profil_names <- as.character(seq_along(total_chla))
 
 plot(
   total_chla,
   type = "b",                     
   pch = 18,                        
   col = "blue",
-  xlab = "Profil n°",
+  xlab = "",
   ylab = "Total Chl-a (mg/m³)",
-  main = paste0("Chl-a totale par profile : ", SEAL_NAME),
+  main = paste0("Total Chl-a per profile : ", SEAL_NAME),
   xaxt = "n"                       
 )
 
-axis(1, at = seq(1, length(profil_names), by = 20), labels = profil_names[seq(1, length(profil_names), by = 20)])
+# Ajout d'un axe x avec les dates
+axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2, cex.axis = 0.7)
+
 ```
 
 <h4>Saving and classifying Chl-a profiles</h4>
@@ -914,7 +917,7 @@ df_profile_info <- data.frame(
 # Merge avec df_final (en format long)
 df_final <- merge(df_final, df_profile_info, by = "profile_id")
 
-# Exporter
-write.csv(df_final, paste0(SEAL_NAME, "_data.csv"), row.names = FALSE)
+# Exporter en .rds (Difference avec le RData = RData plusieurs objets, rds 1 seul objet (c'est notre cas))
+saveRDS(df_final, file = paste0(SEAL_NAME, "_data.rds"))
 
 ```
