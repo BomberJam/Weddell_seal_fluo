@@ -47,11 +47,18 @@ DDU_loc=as.data.frame(DDU_loc)
 ```{r paths}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
-DATA_FOLDER <- "oceanographic_data"
+# DATA_FOLDER <- "oceanographic_data"
+# DEPLOY_FOLDER <- "wd11"
+# SEAL_NAME <- paste0(DEPLOY_FOLDER,"-682-17")
+# SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
+# NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+
+DATA_FOLDER <- "oceanographic_data_corrected"
+DEPLOY_SEASON <- "winter"
 DEPLOY_FOLDER <- "wd11"
 SEAL_NAME <- paste0(DEPLOY_FOLDER,"-682-17")
-SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
-NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+SEAL_FILE <- paste0(SEAL_NAME, "_data.csv")
+CSV_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_SEASON, DEPLOY_FOLDER, SEAL_FILE)
 
 BATHY_FOLDER <- "bathy"
 FINE_TOPO_FILE <- "gvdem100v3/w001001.adf"
@@ -74,7 +81,7 @@ AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 <h4>Reading CSV</h4>
 ```{r}
 # CSV qui contient les valeurs de lumieres et chla corrigées par le script Data_L_F_corrected
-df_data_corrected<- read.csv("wd11-682-17_data.csv")
+df_data_corrected<- read.csv(CSV_PATH)
 
 # df_data_corrected contient une ligne par profondeur et par profil
 # Il faut reformatter : profondeur = lignes, profil = colonnes
@@ -86,6 +93,7 @@ light_corrected_log <- as.matrix(light_corrected_log[ , -which(colnames(light_co
 
 df_profiles_mld <- df_data_corrected[!duplicated(df_data_corrected$profile_id), c("profile_id", "MLD")]
 mld_vec <- df_profiles_mld$MLD
+
 df_profiles_qd <- df_data_corrected[!duplicated(df_data_corrected$profile_id), c("profile_id", "QD")]
 quenchDepth_vec <- df_profiles_qd$QD
 
@@ -105,12 +113,12 @@ fine_topo <- raster(BATHY_PATH_FINE)
 fine_topo[fine_topo >=0] <- NA
 fine_topo_spat <- terra::rast(fine_topo)
 
-# large_topo <- raster(BATHY_PATH_LARGE)
-# large_topo[large_topo >=0] <-NA
-# large_topo_spat <- terra::rast(large_topo)
+large_topo <- raster(BATHY_PATH_LARGE)
+large_topo[large_topo >=0] <-NA
+large_topo_spat <- terra::rast(large_topo)
 
 fine_topo_spat <- crop(fine_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
-# large_topo_spat <- crop(large_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
+large_topo_spat <- crop(large_topo_spat, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
 ```
 
 <h4>Loading and cropping fast ice raster</h4>
@@ -123,10 +131,7 @@ set.ext(fast_ice_raster, ext(ex))
 set.crs(fast_ice_raster, crs(prj))
 #plot(fast_ice_raster[[1]], legend = FALSE) # le continent
 
-points <- cbind(
-  lon = c(LON_MIN, LON_MAX),  
-  lat = c(LAT_MIN, LAT_MAX)
-)
+points <- cbind(lon = c(LON_MIN, LON_MAX), lat = c(LAT_MIN, LAT_MAX))
 
 prjpoints <- project(points, to = prj, from = "EPSG:4326")
 new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
