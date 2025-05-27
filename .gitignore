@@ -1,7 +1,11 @@
 # Ignorer tout
 *
 
-# Mais pas ces fichiers-là :
+# Ne pas ignorer les dossiers (sinon git ne va pas regarder dedans)
+!*/
+
+# Ne pas ignorer ces fichiers spécifiques à la racine ou partout
 !.gitignore
 !README.md
 !*.Rmd
+
