@@ -1,0 +1,58 @@
+---
+title: "Gather_individuals"
+author: "Claude Cugerone"
+date: "2025-05-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Regroupe tous les individus d'un déploiement dans un rds "combined_"wd11".rds"
+
+library(dplyr)
+
+deployment <- "wd20"
+input_dir <- paste0("oceanographic_data_corrected/", deployment)
+output_path <- file.path(input_dir, paste0("combined_", deployment, ".rds"))
+
+# Liste de fichiers RDS dans le dossier spécifié
+files <- list.files(path = input_dir, pattern = "_data\\.rds$", full.names = TRUE)
+
+# Charger et cumuler les données
+combined_data <- files %>%
+  lapply(readRDS) %>%
+  bind_rows() %>%
+  arrange(SEAL_NAME, profile_id, date) # trier par ind, puis profile, puis date.
+
+# Sauvegarder
+saveRDS(combined_data, output_path)
+
+```
+
+```{r}
+# Regroupe tous les deploiements pour avoir tous les individus dans un rds
+
+library(dplyr)
+
+# Dossier contenant tous les sous-dossiers de déploiement
+base_dir <- "oceanographic_data_corrected"
+
+# Cherche tous les fichiers combined_*.rds dans tous les sous-dossiers
+combined_files <- list.files(path = base_dir, pattern = "^combined_.*\\.rds$", 
+                             full.names = TRUE, recursive = TRUE)
+
+# Charger et combiner tous les fichiers
+all_data <- combined_files %>%
+  lapply(readRDS) %>%
+  bind_rows() %>%
+  arrange(SEAL_NAME, profile_id, date)
+
+# Sauvegarder le fichier final
+saveRDS(all_data, file.path(base_dir, "all_deployment.rds"))
+
+```
+
+

@@ -68,17 +68,17 @@ dateTime <- round(dateTime, units = "mins")  # arrondi à la minute la plus proc
 
 <h4>Correcting longitude and latitude</h4>
 ```{r corrected lon lat}
-diag <- read.csv("diag_2017-2024_forclaude_07apr24.csv", stringsAsFactors = FALSE)
-diag$date <- as.POSIXct(diag$date, format="%Y-%m-%d %H:%M")
+diag <- read.csv("filtered_dives_wd.csv", stringsAsFactors = FALSE)
+diag$date <- as.POSIXct(diag$posix_date, format="%Y-%m-%d %H:%M")
 
 # extraire l'individu qui nous intéresse et trier par date
-df_wd11 <- diag %>% filter(id == SEAL_NAME)
+df_wd11 <- diag %>% filter(REF == SEAL_NAME)
 df_wd11 <- df_wd11 %>% arrange(date)
 
 t1 <- as.numeric(df_wd11$date )
 t2 <- as.numeric(as.POSIXct(dateTime))
 
-cols <- c("lat", "lon")
+cols <- c("interpLat", "interpLon")
 interp_results <- lapply(cols, function(col) {
   approx(x = t1, y = df_wd11[[col]], xout = t2, rule = 2)$y
 })
@@ -90,13 +90,13 @@ df_original <- data.frame(lon = lon, lat = lat)
 
 ggplot() +
   geom_point(data = df_original, aes(x = lon, y = lat, color = "Original"), alpha = 0.4, size = 2) +
-  geom_point(data = df_interp, aes(x = lon_corr, y = lat_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
+  geom_point(data = df_interp, aes(x = interpLon_corr, y = interpLat_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
   scale_color_manual(name = "Type de données", values = c("Original" = "blue", "Interpolated" = "red")) +
   labs(title = paste0(SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[length(SURFACE_NOT_NAN)], " m deep"), x = "Longitude", y = "Latitude") +
   theme_minimal()
 
-lon <- df_interp$lon_corr
-lat <- df_interp$lat_corr
+lon <- df_interp$interpLon_corr
+lat <- df_interp$interpLat_corr
 ```
 
 <h2>Computing Mixed Layer Depth</h2>

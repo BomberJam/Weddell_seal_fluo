@@ -1,0 +1,23 @@
+---
+title: "Extract_col_from_csv"
+author: "Claude Cugerone"
+date: "2025-05-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+diag <- read.csv("alldives_2006-24_withdates_meandepth_sex_interpLonLat_bathy_pointstocoast_hunting_slope_fastice_with2024_females_polygonperyear_polygonallyears_20mar2025.csv", 
+                 stringsAsFactors = FALSE)
+
+diag_filtered <- diag[grepl("^wd", diag$REF), c("REF", "interpLon", "interpLat", "posix_date")]
+
+diag_sorted <- diag_filtered[order(diag_filtered$REF), ]
+
+write.csv(diag_sorted, "filtered_dives_wd.csv", row.names = FALSE)
+
+
+```
