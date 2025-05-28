@@ -57,7 +57,7 @@ ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data_corrected"
 DEPLOY_FOLDER <- "wd11"
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-909-18")
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-687-18")
 SEAL_FILE <- paste0(SEAL_NAME, "_data.rds")
 RDS_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 
@@ -411,6 +411,24 @@ ggplot() +
   coord_sf(xlim = c(139.5, 140.5),ylim = c(-66.8, -66.5))
 
 ```
+<h4>Carte avec tous les individus</h4>
+```{r}
+library(dplyr)
+
+all_deployment <- readRDS("oceanographic_data_corrected/all_deployment.rds")
+
+# une seule ligne par profil (même lon lat sur la totalité du profil)
+unique_profiles <- all_deployment %>%
+  distinct(profile_id, SEAL_NAME, lon, lat, .keep_all = TRUE)
+
+# points colorés par individu
+new_scale_color() +
+geom_point(data = unique_profiles, aes(x = lon, y = lat, color = SEAL_NAME), size = 1) +
+scale_color_manual(values = scales::hue_pal()(length(unique(unique_profiles$id_indiv))))
+
+
+```
+
 
 ```{r}
 

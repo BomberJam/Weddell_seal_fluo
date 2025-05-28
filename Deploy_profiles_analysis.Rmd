@@ -175,67 +175,6 @@ library(lubridate)
 
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 DATA_FOLDER <- "oceanographic_data"
-#deployments <- c("wd10", "wd11", "wd12", "wd13", "wd19", "wd20", "wd31")
-deployments <- c("wd11", "wd12", "wd20", "wd31") # winter
-#deployments <- c("wd10", "wd13", "wd19") # summer
-
-all_profiles <- data.frame()
-
-for (DEPLOY_FOLDER in deployments) {
-  DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
-  nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
-
-  for (nc_file in nc_files) {
-    nc_data <- nc_open(nc_file)
-    juld <- ncvar_get(nc_data, "JULD")
-    nc_close(nc_data)
-
-    dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
-    dateTime <- round(dateTime, units = "mins")
-
-    individual <- tools::file_path_sans_ext(basename(nc_file))
-
-    if (length(dateTime) > 0) {
-      profiles <- data.frame(
-        dateTime = dateTime,
-        month_year = format(dateTime, "%Y %b"),
-        deployment = DEPLOY_FOLDER,
-        individual = individual
-      )
-
-      all_profiles <- bind_rows(all_profiles, profiles)
-    }
-  }
-}
-
-# Grouper les profils par mois et déploiement
-summary_profiles <- all_profiles %>%
-  group_by(deployment, month_year) %>%
-  summarise(n_profiles = n(), .groups = "drop")
-
-# Transformer en facteur ordonné pour garder l'ordre temporel
-summary_profiles$month_year <- as.factor(summary_profiles$month_year)
-summary_profiles$month_year <- factor(summary_profiles$month_year,
-                                      levels = sort(unique(summary_profiles$month_year)))
-
-ggplot(summary_profiles, aes(x = month_year, y = deployment, fill = n_profiles)) +
-  geom_tile(color = "white") +
-  scale_fill_viridis_c(option = "plasma", name = "Nb profiles") +
-  theme_minimal() +
-  labs(title = "Temporal distribtuion of profiles by deployment",
-       x = "Month/Year", y = "Deployment") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
-
-```{r}
-library(ncdf4)
-library(dplyr)
-library(ggplot2)
-library(lubridate)
-
-ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
-DATA_FOLDER <- "oceanographic_data"
 deployments <- c("wd11", "wd12", "wd20", "wd31")  # hiver
 
 all_profiles <- data.frame()
@@ -284,5 +223,65 @@ ggplot(monthly_counts, aes(x = month, y = n_profiles)) +
   scale_x_datetime(date_breaks = "4 months", date_labels = "%b %Y") +
   coord_cartesian(ylim = c(0, 300)) +   # fixe le y
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+# "the input parameters should be Absolute Salinity and Conservative Temperature instead of Practical Salinity and in-situ Temperature."
+# https://hafezahmad.medium.com/making-temperature-salinity-diagrams-called-the-t-s-diagram-with-python-and-r-programming-5deec6378a29
+library(gsw)
+library(plot3D)
+
+# Lire les données depuis un fichier .rds
+seal_name <- "wd11-909-18"
+data <- readRDS(paste0("oceanographic_data_corrected/wd11/",seal_name,"_data.rds"))
+
+# Extraire les variables
+sal <- data$salinity
+temp <- data$temperature
+lon <- data$lon
+lat <- data$lat
+p <- 0  # non disponible
+
+# Filtrer les valeurs manquantes
+valid <- !is.na(sal) & !is.na(temp) & !is.na(lon) & !is.na(lat)
+sal <- sal[valid]
+temp <- temp[valid]
+lon <- lon[valid]
+lat <- lat[valid]
+
+# Convertir en salinité absolue (SA) et température conservative (CT)
+SA <- gsw_SA_from_SP(sal, p = p, longitude = lon, latitude = lat)
+CT <- gsw_CT_from_t(SA, temp, p)
+
+# Calcul de la densité potentielle sigma0 (kg/m³ - 1000)
+sigma_theta <- gsw_sigma0(SA, CT)
+
+# Créer les grilles pour les isopycnes
+sa_grid <- seq(min(SA, na.rm = TRUE), max(SA, na.rm = TRUE), length.out = 156)
+ct_grid <- seq(min(CT, na.rm = TRUE), max(CT, na.rm = TRUE), length.out = 156)
+
+# Calculer la densité sur la grille
+sigma.c <- outer(sa_grid, ct_grid, FUN = function(S, T) gsw_sigma0(S, T))
+
+# Tracer le diagramme T/S
+par(mar = c(5, 5, 4, 6))  # Marges du graphique
+
+# Tracer les isopycnes
+contour2D(x = sa_grid, y = ct_grid, z = sigma.c, lwd = 2,
+          main = paste0("T/S Diagram (TEOS-10) - ",seal_name),
+          col = "black",
+          xlab = expression("Absolute Salinity (g/kg)"),
+          ylab = expression("Conservative Temperature ("*~degree*C*")"))
+
+# points TS colorés par densité
+scatter2D(SA, CT, colvar = sigma_theta, pch = 16, cex = 1.25, add = TRUE,
+          clim = range(sigma.c), colkey = FALSE)
+
+# légende colorbar
+colkey(clim = range(sigma.c), dist = 0.005, side = 4, add = TRUE,
+       clab = expression("Density (kg·m"^-3*")"), col.clab = "black",
+       side.clab = 4, line.clab = 2.5, length = 1, width = 0.8,
+       col.axis = "black", col.ticks = "black", cex.axis = 0.9)
 
 ```
