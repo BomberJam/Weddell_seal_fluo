@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(dplyr)
 
-deployment <- "wd20"
+deployment <- "wd11"
 input_dir <- paste0("oceanographic_data_corrected/", deployment)
 output_path <- file.path(input_dir, paste0("combined_", deployment, ".rds"))
 

@@ -39,7 +39,7 @@ ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data"
 DEPLOY_FOLDER <- "wd11"
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-909-18")
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-682-17")
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 ```
@@ -824,12 +824,12 @@ colnames(df_temperature)     <- depth_names
 colnames(df_salinity)        <- depth_names
 
 # Ajouter colonne SEAL_NAME
-df_light_raw$SEAL_NAME       <- SEAL_NAME
-df_light_corrected$SEAL_NAME <- SEAL_NAME
-df_chla_raw$SEAL_NAME        <- SEAL_NAME
-df_chla_corrected$SEAL_NAME  <- SEAL_NAME
-df_temperature$SEAL_NAME     <- SEAL_NAME
-df_salinity$SEAL_NAME        <- SEAL_NAME
+df_light_raw$seal_id       <- SEAL_NAME
+df_light_corrected$seal_id <- SEAL_NAME
+df_chla_raw$seal_id        <- SEAL_NAME
+df_chla_corrected$seal_id  <- SEAL_NAME
+df_temperature$seal_id     <- SEAL_NAME
+df_salinity$seal_id        <- SEAL_NAME
 
 # Ajouter info profil
 df_light_raw$profile_id       <- 1:n_profiles
@@ -862,36 +862,36 @@ library(reshape2)
 
 # Long pour les lumières
 light_raw_long <- melt(df_light_raw,
-                       id.vars = c("SEAL_NAME", "profile_id", "date", "lon", "lat"),
+                       id.vars = c("seal_id", "profile_id", "date", "lon", "lat"),
                        variable.name = "depth_index",
                        value.name = "light_raw")
 
 light_corr_long <- melt(df_light_corrected,
-                        id.vars = c("SEAL_NAME", "profile_id"),
+                        id.vars = c("seal_id", "profile_id"),
                         variable.name = "depth_index",
                         value.name = "light_corrected")
 
 chla_raw_long <- melt(df_chla_raw,
-                      id.vars = c("SEAL_NAME", "profile_id"),
+                      id.vars = c("seal_id", "profile_id"),
                       variable.name = "depth_index",
                       value.name = "chla_raw")
 
 chla_corr_long <- melt(df_chla_corrected,
-                       id.vars = c("SEAL_NAME", "profile_id"),
+                       id.vars = c("seal_id", "profile_id"),
                        variable.name = "depth_index",
                        value.name = "chla_corrected")
 
 temp_long <- melt(df_temperature,
-                  id.vars = c("SEAL_NAME", "profile_id"),
+                  id.vars = c("seal_id", "profile_id"),
                   variable.name = "depth_index",
                   value.name = "temperature")
 
 sal_long <- melt(df_salinity,
-                  id.vars = c("SEAL_NAME", "profile_id"),
+                  id.vars = c("seal_id", "profile_id"),
                   variable.name = "depth_index",
                   value.name = "salinity")
 
-df_final <- Reduce(function(x, y) merge(x, y, by = c("SEAL_NAME", "profile_id", "depth_index")),
+df_final <- Reduce(function(x, y) merge(x, y, by = c("seal_id", "profile_id", "depth_index")),
                    list(light_raw_long, light_corr_long, chla_raw_long, chla_corr_long, temp_long, sal_long))
 
 # Ajouter profondeur réelle (obligé d'avoir une version numerique, sinon la profondeur se trie par ordre alphabetique dans le csv)
@@ -902,7 +902,7 @@ df_final <- df_final[order(df_final$profile_id, df_final$depth_num), ]
 df_final$depth <- pres_vec[df_final$depth_num]
 
 # Réorganiser colonnes
-df_final <- df_final[, c("SEAL_NAME", "profile_id", "date", "lon", "lat", "depth", 
+df_final <- df_final[, c("seal_id", "profile_id", "date", "lon", "lat", "depth", 
                          "light_raw", "light_corrected", 
                          "chla_raw", "chla_corrected",
                          "temperature", "salinity")]
