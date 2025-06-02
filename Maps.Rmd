@@ -82,7 +82,7 @@ AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 ```
 
 <h2>MAPS</h2>
-<h4>Reading CSV</h4>
+<h4>Reading RDS</h4>
 ```{r}
 # CSV qui contient les valeurs de lumieres et chla corrigées par le script Data_L_F_corrected
 df_data_corrected<- readRDS(RDS_PATH)
@@ -154,7 +154,7 @@ x_sub <- subset(new_r, time_index)
 plot(x_sub, legend = FALSE)
 ```
 
-<h4>Removing values from the raster we don't want (we want fast-ice values)</h4>
+<h4>Removing values from the raster we don't want </h4>
 ```{r fast_ice_processing}
 x_sub2= project(x_sub, crs(large_topo_spat), 
                 res = res(large_topo_spat)) 
@@ -551,7 +551,7 @@ cat("Number of Twilight values :", nPeriod$n[3], "\n")
 ```{r LightThroughTime}
 
 # Ajouter la phase lunaire
-df_solar$lunar_phase <- lunar.phase(df_solar$date, name = TRUE)
+df_solar$lunar_phase <- lunar.phase(df_solar$date,shift=, name = TRUE)
 
 # Extraire les dates de pleine lune (distinctes, arrondies à la date)
 full_moon_dates <- df_solar %>%

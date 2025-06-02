@@ -33,13 +33,13 @@ library(nortest)
 MAX_CHLA_DEPTH <- 175       # define depth at which to consider dark signal (CHLA "absolute zero")
 MAX_DEPTH <- 250
 SURFACE_NOT_NAN <- 4:10
-idprofile <- 1 # Indice du profil affiché sur les plots individuels.
+idprofile <- 6 # Indice du profil affiché sur les plots individuels.
 
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data"
 DEPLOY_FOLDER <- "wd11"
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-682-17")
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-909-18")
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 ```
@@ -183,6 +183,8 @@ ggplot(df_mld, aes(x = profile, y = value)) +
 <h4>Estimating the number of empty light profiles</h4>
 ```{r NaColumns}
 col_na_only <- apply(raw_light, 2, function(col) all(is.na(col)))
+
+which(col_na_only)
 
 cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 ```
@@ -416,53 +418,53 @@ axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2
 
 ```
 
-<h4>Saving and classifying light profiles (condition does not seem strong enough)</h4>
+<h4>Saving light profiles </h4>
 ```{r SaveAndClassifyLightProfiles}
 
-# dir_standard = "profils_light_standard"
-# dir_atypique = "profils_light_atypique"
-# dir.create(dir_standard, showWarnings = FALSE)
-# dir.create(dir_atypique, showWarnings = FALSE)
-# 
-# nlight = ncol(light_corrected)
-# 
-# for (i in 1:nlight) {
-#   profil_light <- light_corrected[, i]
-#   profil_pres <- pres_vec
-#   
-#   delta_light <- profil_light - profil_light[1]
-# 
-#   if (any(delta_light > 0, na.rm = TRUE)) {
-#     class_dir <- dir_atypique
-#   } else {
-#     class_dir <- dir_standard
-#   }
-#   
-#   filename <- paste0(class_dir, "/profil_light", i, ".png")
-#   
-#   png(filename, width = 800, height = 600)
-#   
-#   plot(profil_light, profil_pres,
-#        type = "l",
-#        xlim = c(-10,10),
-#        ylim = rev(c(0, MAX_CHLA_DEPTH)),
-#        xlab = "Light (µmol/m²/s)",
-#        ylab = "Press",
-#        main = paste0("Light profile ",i," - Original and Corrected\n", SEAL_NAME))
-#   grid()
-#   
-#   abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
-#   abline(h = df_mld$value[i], col = "purple", lty = 2)
-# 
-#   legend("topright", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 2, cex = 0.8, bg = "white")
-#   
-#   dev.off()
-# }
+# Dossiers de sortie
+dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME)
+dir.create(dir_plot, showWarnings = FALSE)
 
-# cat("Classification terminée :\n")
-# cat(nlight, "profils analysés\n")
-# cat("->", length(list.files(dir_standard)), "profils standards dans", dir_standard, "\n")
-# cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypique, "\n\n")
+nlight = ncol(light_corrected_non_log)
+
+for (i in 1:nlight) {
+  filename <- paste0(dir_plot, "/", SEAL_NAME, "_", i, ".png")
+  
+  png(filename, width = 800, height = 600)
+  
+  plot(light_non_log[1:MAX_CHLA_DEPTH, i],
+       pres_vec[1:MAX_CHLA_DEPTH],
+       type = "l",
+       col = "blue",
+       ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])),
+       xlim = c(0, 3e-4),
+       xlab = "Light ln(µmol/m²/sec)",
+       ylab = "Depth (m)",
+       main = paste0("Light profile ", i, " - Original and Corrected\n", SEAL_NAME))
+  
+  lines(light_corrected_non_log[1:MAX_CHLA_DEPTH, i],
+        pres_vec[1:MAX_CHLA_DEPTH],
+        col = "red")
+  
+  legend("bottomright",
+         legend = c("Original", "Corrected"),
+         col = c("blue", "red"),
+         lty = 1,
+         bty = "n")
+  
+  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+  abline(h = df_mld$value[i], col = "purple", lty = 2)
+  
+  legend("bottomleft",
+         legend = c("Quenching Depth", "MLD"),
+         col = c("cyan", "purple"),
+         lty = 2,
+         bty = "n")
+  
+  dev.off()
+}
+
+cat(nlight, "profils enregistrés dans", dir_plot, "\n")
 
 ```
 
@@ -475,7 +477,7 @@ which(col_na_only)
 cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 ```
 
-<h4>Dark-value correction for Chl-a profiles (only works for some profiles, investigating where the code is incorrect)</h4>
+<h4>Dark-value correction for Chl-a profiles</h4>
 ```{r DarkValue_chla}
 correct_chla_profile_matlab <- function(col_data, pres_vec,
                                         darkDepthDelta_temp = 10,

@@ -1,0 +1,261 @@
+---
+title: "Analysis per deployment"
+author: "Claude Cugerone"
+date: "2025-06-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("plot_dive.R")
+```
+
+```{r}
+DATA_FOLDER <- "oceanographic_data_corrected"
+DEPLOY_FOLDER <- "wd11"
+# SEAL_NAME <- paste0(DEPLOY_FOLDER,"-687-18")
+# SEAL_FILE <- paste0(SEAL_NAME, "_data.rds")
+# RDS_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+DEPLOYMENT_FILE <- paste0("combined_",DEPLOY_FOLDER,".rds")
+RDS_DEPLOYMENT_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, DEPLOYMENT_FILE)
+
+# BATHY_FOLDER <- "bathy"
+# FINE_TOPO_FILE <- "gvdem100v3/w001001.adf"
+# LARGE_TOPO_FILE <- "gebco_2023_n-50.0_s-79.0_w90.0_e180.0.tif"
+# BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
+# BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
+# 
+# FAST_ICE_FOLDER <- "fast_ice"
+# FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
+# FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
+# 
+# AMSR_FOLDER <- "amsr2"
+# AMSR_FOLDER_YEAR <- "2019"
+# AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
+# AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
+# AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
+
+deployment_profiles <- readRDS(RDS_DEPLOYMENT_PATH)
+
+# Vérifie que la colonne "date" est bien au bon format
+deployment_profiles <- deployment_profiles %>%
+  mutate(
+    date = as.POSIXct(date, origin = "1970-01-01", tz = "UTC"),
+    month = floor_date(date, "month")
+  )
+```
+
+<h2>Number of individuals and associated profiles<h2>
+```{r}
+
+# Nombre d'individus uniques
+nb_individus <- length(unique(deployment_profiles$SEAL_NAME))
+cat("Number of individuals :", nb_individus, "\n\n")
+
+# Nombre de profils par individu
+cat("Profiles for each individual :\n")
+profils_par_individu <- table(deployment_profiles$SEAL_NAME)
+print(profils_par_individu)
+
+```
+
+<h2>NA and not-NA profiles<h2>
+```{r}
+library(dplyr)
+
+na_summary <- deployment_profiles %>%
+  group_by(profile_id) %>%
+  summarise(
+    light_raw_all_na = all(is.na(light_raw)),
+    chla_raw_all_na = all(is.na(chla_raw)),
+    temperature_all_na = all(is.na(temperature)),
+    salinity_all_na = all(is.na(salinity))
+  ) %>%
+  mutate(
+    all_na = light_raw_all_na & chla_raw_all_na & temperature_all_na & salinity_all_na,
+    all_non_na = !(light_raw_all_na | chla_raw_all_na | temperature_all_na | salinity_all_na)
+  )
+
+# Nombre de profils entierement NA
+nb_profils_all_na <- sum(na_summary$all_na)
+cat("Number of fully NA profiles (light chl-a temp and sal):", nb_profils_all_na, "\n")
+cat("Fully NA profiles (profile_id):\n")
+print(na_summary$profile_id[na_summary$all_na])
+
+# Number of profiles where none of the four variables are completely NA
+nb_profils_all_non_na <- sum(na_summary$all_non_na)
+cat("\nNumber of fully non-NA profiles (none of the 4 variables are completely NA):", nb_profils_all_non_na, "\n")
+
+```
+
+```{r}
+library(dplyr)
+
+# Identifier pour chaque profile_id si chaque variable est entièrement NA
+na_flags <- deployment_profiles %>%
+  group_by(profile_id, SEAL_NAME) %>%
+  summarise(
+    light_raw_all_na = all(is.na(light_raw)),
+    chla_raw_all_na = all(is.na(chla_raw)),
+    temperature_all_na = all(is.na(temperature)),
+    salinity_all_na = all(is.na(salinity)),
+    .groups = "drop"
+  )
+
+# Calculer le nombre de profils NA par variable et par SEAL_NAME
+na_counts_by_seal <- na_flags %>%
+  group_by(SEAL_NAME) %>%
+  summarise(
+    nb_light_raw_all_na = sum(light_raw_all_na),
+    nb_chla_raw_all_na = sum(chla_raw_all_na),
+    nb_temperature_all_na = sum(temperature_all_na),
+    nb_salinity_all_na = sum(salinity_all_na),
+    total_profiles = n()
+  ) %>%
+  arrange(desc(total_profiles))
+
+print(na_counts_by_seal)
+
+```
+
+```{r}
+# Profils avec données valides pour light_raw
+light_counts <- deployment_profiles %>%
+  filter(!is.na(light_raw)) %>%
+  group_by(deployment, month, profile_id) %>%
+  summarise(.groups = "drop") %>%
+  group_by(deployment, month) %>%
+  summarise(n_profiles = n(), .groups = "drop")
+
+# Plot
+ggplot(light_counts, aes(x = month, y = n_profiles)) +
+  geom_col(fill = "goldenrod") +
+  facet_wrap(~deployment, ncol = 1, scales = "free_y") +
+  theme_minimal() +
+  labs(
+    title = "Temporal histogram of profiles with light data",
+    x = "",
+    y = "Number of profiles"
+  ) +
+  scale_x_datetime(date_breaks = "1 month", date_labels = "%b %Y") +
+  coord_cartesian(ylim = c(0, 80)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Profils avec données valides pour chla_raw
+chla_counts <- deployment_profiles %>%
+  filter(!is.na(chla_raw)) %>%
+  group_by(deployment, month, profile_id) %>%
+  summarise(.groups = "drop") %>%
+  group_by(deployment, month) %>%
+  summarise(n_profiles = n(), .groups = "drop")
+
+# Plot
+ggplot(chla_counts, aes(x = month, y = n_profiles)) +
+  geom_col(fill = "darkgreen") +
+  facet_wrap(~deployment, ncol = 1, scales = "free_y") +
+  theme_minimal() +
+  labs(
+    title = "Temporal histogram of profiles with chl-a data",
+    x = "",
+    y = "Number of profiles"
+  ) +
+  scale_x_datetime(date_breaks = "1 month", date_labels = "%b %Y") +
+  coord_cartesian(ylim = c(0, 80)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# LIGHT
+light_profile_counts <- deployment_profiles %>%
+  filter(!is.na(light_raw)) %>%
+  group_by(deployment, SEAL_NAME, profile_id) %>%
+  summarise(.groups = "drop") %>%
+  group_by(deployment, SEAL_NAME) %>%
+  summarise(n_profiles = n(), .groups = "drop")
+
+ggplot(light_profile_counts, aes(x = SEAL_NAME, y = n_profiles, fill = deployment)) +
+  geom_col() +
+  theme_minimal() +
+  labs(
+    title = "Number of light profiles by seal",
+    x = "Seal",
+    y = "Number of profiles"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# CHLA
+chla_profile_counts <- deployment_profiles %>%
+  filter(!is.na(chla_raw)) %>%
+  group_by(deployment, SEAL_NAME, profile_id) %>%
+  summarise(.groups = "drop") %>%
+  group_by(deployment, SEAL_NAME) %>%
+  summarise(n_profiles = n(), .groups = "drop")
+
+ggplot(chla_profile_counts, aes(x = SEAL_NAME, y = n_profiles, fill = deployment)) +
+  geom_col() +
+  theme_minimal() +
+  labs(
+    title = "Number of chl-a profiles by seal",
+    x = "Seal",
+    y = "Number of profiles"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+<h2> Time Series </h2>
+```{r}
+
+```
+
+<h2> Mixed Layer Depth </h2>
+```{r}
+
+```
+<h2> Light </h2>
+<h4> Light raw and corrected </h4>
+```{r}
+
+```
+
+
+```{r}
+
+plot_light_profile <- function(df, seal_name, profile_id) {
+  
+  first_date <- df %>%
+    filter(SEAL_NAME == seal_name, profile_id == profile_id) %>%
+    distinct(date) %>%
+    arrange(date) %>%
+    slice(1) %>%
+    pull(date)
+  
+  profile_to_plot <- df %>%
+    filter(SEAL_NAME == seal_name, profile_id == profile_id, date == first_date)
+
+  depth <- profile_to_plot$depth
+  light_raw <- profile_to_plot$light_raw
+  light_corrected <- profile_to_plot$light_corrected
+
+  xlim_vals <- range(c(light_raw, light_corrected), na.rm = TRUE)
+
+  plot(light_raw, depth, type = "l", col = "blue", lwd = 2,
+       ylim = rev(range(depth, na.rm = TRUE)), xlim = xlim_vals,
+       xlab = "Light (µmol/m²/sec)", ylab = "Depth (m)",
+       main = paste0("Light profile ", profile_id, " - ", seal_name))
+
+  lines(light_corrected, depth, col = "red", lwd = 2)
+
+  legend("bottomright", legend = c("light_raw", "light_corrected"),
+         col = c("blue", "red"), lty = 1, lwd = 2, bty = "n")
+}
+
+plot_light_profile(deployment_profiles, seal_name = "wd11-682-17", profile_id = 1)
+
+```
