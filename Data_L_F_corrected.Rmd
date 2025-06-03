@@ -31,17 +31,19 @@ library(nortest)
 <h4> Global variables & Paths</h4>
 ```{r variables}
 MAX_CHLA_DEPTH <- 175       # define depth at which to consider dark signal (CHLA "absolute zero")
-MAX_DEPTH <- 250
+MAX_DEPTH <- 600
 SURFACE_NOT_NAN <- 4:10
-idprofile <- 6 # Indice du profil affiché sur les plots individuels.
+idprofile <- 1 # Indice du profil affiché sur les plots individuels.
 
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data"
+DATA_FOLDER_CORRECTED <- "oceanographic_data_corrected"
 DEPLOY_FOLDER <- "wd11"
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-909-18")
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-913-18")
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+RSD_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, SEAL_NAME)
 ```
 
 <h4>NetCDF Extract</h4>
@@ -55,6 +57,7 @@ temp  <- ncvar_get(nc_data, "TEMP_ADJUSTED")
 sal   <- ncvar_get(nc_data, "PSAL_ADJUSTED")
 pres  <- ncvar_get(nc_data, "PRES_ADJUSTED")
 juld  <- ncvar_get(nc_data, "JULD")
+nc_close(nc_data)
 ```
 
 <h2>Date and coordinates correction</h2>
@@ -755,22 +758,58 @@ axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2
 
 <h2>Light and fluo corrected : profiles</h2>
 ```{r}
+
+library(plotly)
+library(tidyr)
+library(dplyr)
+
 df_L_F_corrected <- data.frame(
   depth = pres_vec[1:MAX_CHLA_DEPTH],
   chla = chla_corrected_q[1:MAX_CHLA_DEPTH,idprofile],
   light = light_corrected_non_log[1:MAX_CHLA_DEPTH,idprofile]
 )
 
-# long format
-df_long_corrected <- df_L_F_corrected %>%
-  pivot_longer(cols = c("chla", "light"), names_to = "variable", values_to = "value")
+fig <- plot_ly()
 
-# Tracé avec ggplot
-ggplot(df_long_corrected, aes(x = value, y = depth, color = variable)) +
-  geom_line(size = 1) +
-  scale_y_reverse() +  # profondeur vers le bas
-  labs(x = "Valeur", y = "Profondeur (m)", color = "Variable") +
-  theme_minimal()
+# Trace pour la chlorophylle (chla), axe X principal
+fig <- fig %>% add_trace(
+  x = df_L_F_corrected$chla,
+  y = df_L_F_corrected$depth,
+  name = "Chl-a",
+  mode = "lines",
+  line = list(color = "green"),
+  type = "scatter"
+)
+
+# Trace pour la lumière (light), axe X secondaire
+fig <- fig %>% add_trace(
+  x = df_L_F_corrected$light,
+  y = df_L_F_corrected$depth,
+  name = "Light",
+  mode = "lines",
+  line = list(color = "orange"),
+  type = "scatter",
+  xaxis = "x2"
+)
+
+# Définition de l'axe X secondaire
+x2 <- list(
+  overlaying = "x",
+  side = "top",
+  title = "Lumière",
+  tickfont = list(color = "orange"),
+  titlefont = list(color = "orange")
+)
+
+# Mise en forme générale
+fig <- fig %>% layout(
+  title = "",
+  xaxis = list(title = "Chlorophylle", titlefont = list(color = "green"), tickfont = list(color = "green")),
+  xaxis2 = x2,
+  yaxis = list(title = "Profondeur (m)", autorange = "reversed"),  # profondeur vers le bas
+  legend = list(x = 0.1, y = 1))
+
+fig
 
 ```
 
@@ -919,7 +958,7 @@ df_profile_info <- data.frame(
 # Merge avec df_final (en format long)
 df_final <- merge(df_final, df_profile_info, by = "profile_id")
 
-# Exporter en .rds (Difference avec le RData = RData plusieurs objets, rds 1 seul objet (c'est notre cas))
-saveRDS(df_final, file = paste0(SEAL_NAME, "_data.rds"))
+# Exporter en .rds (Difference avec le RData = RData plusieurs objets, rds 1 seul objet)
+saveRDS(df_final, file = paste0(RSD_PATH, "_data.rds"))
 
 ```

@@ -7,17 +7,21 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-source("plot_dive.R")
+#source("plot_dive.R")
 ```
 
 ```{r}
+library(dplyr)
+library(lubridate)
+
 DATA_FOLDER <- "oceanographic_data_corrected"
 DEPLOY_FOLDER <- "wd11"
-# SEAL_NAME <- paste0(DEPLOY_FOLDER,"-687-18")
-# SEAL_FILE <- paste0(SEAL_NAME, "_data.rds")
-# RDS_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+seal_name <- paste0(DEPLOY_FOLDER,"-913-18")
+SEAL_FILE <- paste0(seal_name, "_data.rds")
+RDS_SEAL_PATH <- file.path(DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+
 DEPLOYMENT_FILE <- paste0("combined_",DEPLOY_FOLDER,".rds")
-RDS_DEPLOYMENT_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, DEPLOYMENT_FILE)
+RDS_DEPLOYMENT_PATH <- file.path(DATA_FOLDER, DEPLOY_FOLDER, DEPLOYMENT_FILE)
 
 # BATHY_FOLDER <- "bathy"
 # FINE_TOPO_FILE <- "gvdem100v3/w001001.adf"
@@ -49,12 +53,12 @@ deployment_profiles <- deployment_profiles %>%
 ```{r}
 
 # Nombre d'individus uniques
-nb_individus <- length(unique(deployment_profiles$SEAL_NAME))
+nb_individus <- length(unique(deployment_profiles$seal_id))
 cat("Number of individuals :", nb_individus, "\n\n")
 
 # Nombre de profils par individu
 cat("Profiles for each individual :\n")
-profils_par_individu <- table(deployment_profiles$SEAL_NAME)
+profils_par_individu <- table(deployment_profiles$seal_id)
 print(profils_par_individu)
 
 ```
@@ -79,8 +83,6 @@ na_summary <- deployment_profiles %>%
 # Nombre de profils entierement NA
 nb_profils_all_na <- sum(na_summary$all_na)
 cat("Number of fully NA profiles (light chl-a temp and sal):", nb_profils_all_na, "\n")
-cat("Fully NA profiles (profile_id):\n")
-print(na_summary$profile_id[na_summary$all_na])
 
 # Number of profiles where none of the four variables are completely NA
 nb_profils_all_non_na <- sum(na_summary$all_non_na)
@@ -93,7 +95,7 @@ library(dplyr)
 
 # Identifier pour chaque profile_id si chaque variable est entièrement NA
 na_flags <- deployment_profiles %>%
-  group_by(profile_id, SEAL_NAME) %>%
+  group_by(profile_id, seal_id) %>%
   summarise(
     light_raw_all_na = all(is.na(light_raw)),
     chla_raw_all_na = all(is.na(chla_raw)),
@@ -102,9 +104,9 @@ na_flags <- deployment_profiles %>%
     .groups = "drop"
   )
 
-# Calculer le nombre de profils NA par variable et par SEAL_NAME
+# Calculer le nombre de profils NA par variable et par seal_id
 na_counts_by_seal <- na_flags %>%
-  group_by(SEAL_NAME) %>%
+  group_by(seal_id) %>%
   summarise(
     nb_light_raw_all_na = sum(light_raw_all_na),
     nb_chla_raw_all_na = sum(chla_raw_all_na),
@@ -119,6 +121,12 @@ print(na_counts_by_seal)
 ```
 
 ```{r}
+library(ggplot2)
+
+deployment_profiles <- deployment_profiles %>%
+  mutate(deployment = sub("-.*", "", seal_id))
+
+
 # Profils avec données valides pour light_raw
 light_counts <- deployment_profiles %>%
   filter(!is.na(light_raw)) %>%
@@ -174,12 +182,12 @@ library(ggplot2)
 # LIGHT
 light_profile_counts <- deployment_profiles %>%
   filter(!is.na(light_raw)) %>%
-  group_by(deployment, SEAL_NAME, profile_id) %>%
+  group_by(deployment, seal_id, profile_id) %>%
   summarise(.groups = "drop") %>%
-  group_by(deployment, SEAL_NAME) %>%
+  group_by(deployment, seal_id) %>%
   summarise(n_profiles = n(), .groups = "drop")
 
-ggplot(light_profile_counts, aes(x = SEAL_NAME, y = n_profiles, fill = deployment)) +
+ggplot(light_profile_counts, aes(x = seal_id, y = n_profiles, fill = deployment)) +
   geom_col() +
   theme_minimal() +
   labs(
@@ -192,12 +200,12 @@ ggplot(light_profile_counts, aes(x = SEAL_NAME, y = n_profiles, fill = deploymen
 # CHLA
 chla_profile_counts <- deployment_profiles %>%
   filter(!is.na(chla_raw)) %>%
-  group_by(deployment, SEAL_NAME, profile_id) %>%
+  group_by(deployment, seal_id, profile_id) %>%
   summarise(.groups = "drop") %>%
-  group_by(deployment, SEAL_NAME) %>%
+  group_by(deployment, seal_id) %>%
   summarise(n_profiles = n(), .groups = "drop")
 
-ggplot(chla_profile_counts, aes(x = SEAL_NAME, y = n_profiles, fill = deployment)) +
+ggplot(chla_profile_counts, aes(x = seal_id, y = n_profiles, fill = deployment)) +
   geom_col() +
   theme_minimal() +
   labs(
@@ -209,18 +217,282 @@ ggplot(chla_profile_counts, aes(x = SEAL_NAME, y = n_profiles, fill = deployment
 
 
 ```
+<h2> Maximum depth </h2>
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# filtrer avec seal_id
+filtered_data <- deployment_profiles %>%
+  filter(seal_id == seal_name)
+
+# prendre la dernière valeur non-NA de `light_raw` 
+last_depths <- filtered_data %>%
+  group_by(profile_id) %>%  
+  filter(!is.na(light_raw)) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+
+# profondeur maximale atteinte pour chaque profil
+ggplot(last_depths, aes(x = date, y = depth)) + 
+  geom_point(color = "blue", size = 0.5) +
+  scale_y_reverse() +
+  scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%b") +
+  labs(title = paste0("Maximum depth per profile - ",seal_name), x = "", y = "Depth (m)") +
+  theme_minimal()
+
+```
+
+<h2> T/S diagram </h2>
+```{r}
+# "the input parameters should be Absolute Salinity and Conservative Temperature instead of Practical Salinity and in-situ Temperature."
+# https://hafezahmad.medium.com/making-temperature-salinity-diagrams-called-the-t-s-diagram-with-python-and-r-programming-5deec6378a29
+library(gsw)
+library(plot3D)
+
+data <- readRDS(RDS_SEAL_PATH)
+
+# Extraire les variables
+sal <- data$salinity
+temp <- data$temperature
+lon <- data$lon
+lat <- data$lat
+p <- 0  # non disponible
+
+# Filtrer les valeurs manquantes
+valid <- !is.na(sal) & !is.na(temp) & !is.na(lon) & !is.na(lat)
+SA <- sal[valid]
+temp <- temp[valid]
+lon <- lon[valid]
+lat <- lat[valid]
+
+time <- data$date[valid]
+# Convertir le temps en format numérique ou jours depuis début
+time_numeric <- as.numeric(difftime(time, min(time, na.rm = TRUE), units = "days"))
+
+# Générer des valeurs de tick (par ex. 5 ticks également espacés)
+n_ticks <- 5
+tick_vals <- seq(min(time_numeric), max(time_numeric), length.out = n_ticks)
+tick_labels <- format(min(time, na.rm = TRUE) + tick_vals * 86400, "%Y-%m-%d")  # 86400s = 1 jour
+
+# Convertir température potentielle (CT)
+CT <- gsw_CT_from_t(SA, temp, p)
+
+# Calcul de la densité potentielle sigma0 (kg/m³ - 1000)
+sigma_theta <- gsw_sigma0(SA, CT)
+
+# Créer les grilles pour les isopycnes
+sa_grid <- seq(min(SA, na.rm = TRUE), max(SA, na.rm = TRUE), length.out = 156)
+ct_grid <- seq(min(CT, na.rm = TRUE), max(CT, na.rm = TRUE), length.out = 156)
+
+# Calculer la densité sur la grille
+sigma.c <- outer(sa_grid, ct_grid, FUN = function(S, T) gsw_sigma0(S, T))
+
+# Tracer le diagramme T/S
+par(mar = c(5, 5, 4, 6))  # Marges du graphique
+
+# Tracer les isopycnes
+contour2D(x = sa_grid, y = ct_grid, z = sigma.c, lwd = 2,
+          main = paste0("T/S Diagram (TEOS-10) - ", seal_name),
+          col = "black",
+          xlab = expression("Salinity"),
+          ylab = expression("Conservative Temperature ("*~degree*C*")"))
+
+# Points colorés par temps
+scatter2D(SA, CT, colvar = time_numeric, pch = 16, cex = 0.5, add = TRUE,
+          colkey = FALSE)
+
+# Colorbar avec labels de date
+colkey(clim = range(time_numeric), dist = 0.005, side = 4, add = TRUE,
+       clab = "", col.clab = "black",
+       side.clab = 4, line.clab = 2.5, length = 1, width = 0.8,
+       col.axis = "black", col.ticks = "black", cex.axis = 0.8,
+       at = tick_vals, labels = tick_labels)
+```
+```{r}
+library(gsw)
+library(plot3D)
+
+data <- readRDS(RDS_SEAL_PATH)
+
+# Extraire les variables
+sal <- data$salinity
+temp <- data$temperature
+lon <- data$lon
+lat <- data$lat
+depth <- data$depth  # Assure-toi que cette variable existe
+
+# Filtrer les valeurs manquantes
+valid <- !is.na(sal) & !is.na(temp) & !is.na(lon) & !is.na(lat) & !is.na(depth)
+sal <- sal[valid]
+temp <- temp[valid]
+lon <- lon[valid]
+lat <- lat[valid]
+depth <- depth[valid]
+time <- data$date[valid]
+
+# intervalles de profondeur (mètres)
+depth_bins <- list("0-100" = c(0, 20),
+                   "100-300" = c(20, 50))
+
+time_numeric <- as.numeric(difftime(time, min(time, na.rm = TRUE), units = "days"))
+n_ticks <- 5
+tick_vals <- seq(min(time_numeric), max(time_numeric), length.out = n_ticks)
+tick_labels <- format(min(time, na.rm = TRUE) + tick_vals * 86400, "%Y-%m-%d")
+
+# 1 x nombre de graphes, marge : bas gauche haut droite
+par(mfrow = c(1, length(depth_bins)), mar = c(2, 3, 2, 4))
+
+for (bin_name in names(depth_bins)) {
+  range <- depth_bins[[bin_name]]
+  in_bin <- depth >= range[1] & depth < range[2]
+  
+  if (sum(in_bin) == 0) next
+  
+  SA <- sal[in_bin]
+  CT <- gsw_CT_from_t(SA, temp[in_bin], p = depth[in_bin])
+  sigma_theta <- gsw_sigma0(SA, CT)
+  time_sub <- time_numeric[in_bin]
+  
+  # Grille pour les isopycnes
+  sa_grid <- seq(min(SA, na.rm = TRUE), max(SA, na.rm = TRUE), length.out = 100)
+  ct_grid <- seq(min(CT, na.rm = TRUE), max(CT, na.rm = TRUE), length.out = 100)
+  sigma.c <- outer(sa_grid, ct_grid, FUN = function(S, T) gsw_sigma0(S, T))
+  
+  # Tracer le diagramme
+  contour2D(x = sa_grid, y = ct_grid, z = sigma.c, lwd = 1.5,
+            main = paste0("T/S Diagram (", bin_name, " m)"),
+            col = "black",
+            xlab = expression("Salinity"),
+            ylab = expression("Conservative Temperature ("*~degree*C*")"))
+  
+  scatter2D(SA, CT, colvar = time_sub, pch = 16, cex = 0.5, add = TRUE, colkey = FALSE)
+  
+  colkey(clim = range(time_numeric), dist = 0.005, side = 4, add = TRUE,
+         clab = "", col.clab = "black", side.clab = 4, line.clab = 2.5,
+         length = 1, width = 0.8, col.axis = "black", col.ticks = "black",
+         cex.axis = 0.8, at = tick_vals, labels = tick_labels)
+}
+
+```
+
 <h2> Time Series </h2>
 ```{r}
+library(gsw)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+
+# Suppression NA
+valid <- with(data, !is.na(date) & !is.na(depth) & !is.na(temperature) & !is.na(salinity) & !is.na(light_raw) & !is.na(chla_raw))
+data_valid <- data[valid, ]
+
+# Ajouter densité
+data_valid$sigma0 <- gsw_sigma0(data_valid$salinity, gsw_CT_from_t(data_valid$salinity, data_valid$temperature, 0))
+
+# Format long
+data_long <- data_valid %>%
+  select(date, depth, temperature, salinity, sigma0, light_raw, chla_raw) %>%
+  pivot_longer(cols = -c(date, depth), names_to = "variable", values_to = "value")
+
+# plot
+plots <- data_long %>%
+  group_split(variable) %>%
+  lapply(function(df) {
+    ggplot(df, aes(x = date, y = depth, fill = value)) +
+      geom_tile() +
+      scale_y_reverse(limits = c(500, 0)) +
+      scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"), name = unique(df$variable))+
+      labs(title = unique(df$variable), x = "", y = "Depth (m)") +
+      theme_minimal(base_size = 9)
+  })
+
+# Assembler les plots verticalement
+wrap_plots(plots, ncol = 1)
 
 ```
 
 <h2> Mixed Layer Depth </h2>
 ```{r}
+library(ggplot2)
+library(dplyr)
 
+# Combiner et nettoyer
+data <- bind_rows(deployment_profiles) %>%
+  filter(!is.na(MLD), !is.na(QD)) %>%
+  arrange(deployment, seal_id, profile_id, date)
+
+data$date <- as.Date(data$date)
+year <- format(data$date, "%Y")
+
+# Graphique avec facettes
+ggplot(data, aes(x = date, y = MLD, color = seal_id)) +
+  geom_point(shape = 4) +
+  geom_smooth(method = "loess", formula = "y ~ x", linewidth = 0.25, se = FALSE) +
+  scale_y_reverse() +
+  scale_x_date(date_labels = "%b %Y") +
+  facet_wrap(~ deployment, scales = "free_x") + 
+  labs(x = "", y = "Depth (m)", title = paste0("Mixed Layer Depth for deployment ", data$deployment, " (", year,")")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Graphique avec facettes
+ggplot(data, aes(x = date, y = QD, color = seal_id)) +
+  geom_point(shape = 4) +
+  geom_smooth(method = "loess", formula = "y ~ x", linewidth = 0.25, se = FALSE) +
+  scale_y_reverse() +
+  scale_x_date(date_labels = "%b %Y") +
+  facet_wrap(~ deployment, scales = "free_x") + 
+  labs(x = "", y = "Depth (m)", title = paste0("Quenching depth for deployment ", data$deployment, " (", year,")")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
 <h2> Light </h2>
 <h4> Light raw and corrected </h4>
 ```{r}
+library(plotly)
+
+fig <- plot_ly()
+
+# Première trace avec l'axe X principal (xaxis)
+fig <- fig %>% add_trace(
+  x = ~1:3, y = ~10*(4:6),
+  name = "xaxis 1 data",
+  mode = "lines+markers",
+  type = "scatter"
+)
+
+# Définition de l'axe X secondaire (en haut du graphique)
+ax2 <- list(
+  side = "top",
+  overlaying = "x",
+  title = "<b>secondary</b> xaxis title",
+  tickfont = list(color = "blue"),
+  titlefont = list(color = "blue")
+)
+
+# Seconde trace avec l'axe X secondaire (xaxis2)
+fig <- fig %>% add_trace(
+  x = ~2:4, y = ~4:6,
+  name = "xaxis 2 data",
+  xaxis = "x2",
+  mode = "lines+markers",
+  type = "scatter"
+)
+
+# Mise en page du graphique
+fig <- fig %>% layout(
+  title = "Double X Axis Example",
+  xaxis2 = ax2,
+  xaxis = list(title = "<b>primary</b> xaxis title"),
+  yaxis = list(title = "yaxis title"),
+  plot_bgcolor = '#e5ecf6'
+)
+
+fig
+
 
 ```
 
@@ -230,14 +502,14 @@ ggplot(chla_profile_counts, aes(x = SEAL_NAME, y = n_profiles, fill = deployment
 plot_light_profile <- function(df, seal_name, profile_id) {
   
   first_date <- df %>%
-    filter(SEAL_NAME == seal_name, profile_id == profile_id) %>%
+    filter(seal_id == seal_name, profile_id == profile_id) %>%
     distinct(date) %>%
     arrange(date) %>%
     slice(1) %>%
     pull(date)
   
   profile_to_plot <- df %>%
-    filter(SEAL_NAME == seal_name, profile_id == profile_id, date == first_date)
+    filter(seal_id == seal_name, profile_id == profile_id, date == first_date)
 
   depth <- profile_to_plot$depth
   light_raw <- profile_to_plot$light_raw

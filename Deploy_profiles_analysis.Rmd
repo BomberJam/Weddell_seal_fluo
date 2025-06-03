@@ -233,7 +233,7 @@ library(gsw)
 library(plot3D)
 
 # Lire les données depuis un fichier .rds
-seal_name <- "wd11-909-18"
+seal_name <- "wd11-687-18"
 data <- readRDS(paste0("oceanographic_data_corrected/wd11/",seal_name,"_data.rds"))
 
 # Extraire les variables
@@ -243,6 +243,17 @@ lon <- data$lon
 lat <- data$lat
 p <- 0  # non disponible
 
+# Extraire le temps
+time <- data$date[valid]  # filtré comme les autres variables
+
+# Convertir le temps en format numérique ou jours depuis début
+time_numeric <- as.numeric(difftime(time, min(time, na.rm = TRUE), units = "days"))
+
+# Générer des valeurs de tick (par ex. 5 ticks également espacés)
+n_ticks <- 5
+tick_vals <- seq(min(time_numeric), max(time_numeric), length.out = n_ticks)
+tick_labels <- format(min(time, na.rm = TRUE) + tick_vals * 86400, "%Y-%m-%d")  # 86400s = 1 jour
+
 # Filtrer les valeurs manquantes
 valid <- !is.na(sal) & !is.na(temp) & !is.na(lon) & !is.na(lat)
 sal <- sal[valid]
@@ -250,8 +261,8 @@ temp <- temp[valid]
 lon <- lon[valid]
 lat <- lat[valid]
 
-# Convertir en salinité absolue (SA) et température conservative (CT)
-SA <- gsw_SA_from_SP(sal, p = p, longitude = lon, latitude = lat)
+# Convertir en salinité absolue (SA) et température potentielle (CT)
+SA <- sal #gsw_SA_from_SP(sal, p = p, longitude = lon, latitude = lat)
 CT <- gsw_CT_from_t(SA, temp, p)
 
 # Calcul de la densité potentielle sigma0 (kg/m³ - 1000)
@@ -267,21 +278,22 @@ sigma.c <- outer(sa_grid, ct_grid, FUN = function(S, T) gsw_sigma0(S, T))
 # Tracer le diagramme T/S
 par(mar = c(5, 5, 4, 6))  # Marges du graphique
 
-# Tracer les isopycnes
+# Tracer les isopycnes (inchangé)
 contour2D(x = sa_grid, y = ct_grid, z = sigma.c, lwd = 2,
-          main = paste0("T/S Diagram (TEOS-10) - ",seal_name),
+          main = paste0("T/S Diagram (TEOS-10) - ", seal_name),
           col = "black",
-          xlab = expression("Absolute Salinity (g/kg)"),
+          xlab = expression("Salinity"),
           ylab = expression("Conservative Temperature ("*~degree*C*")"))
 
-# points TS colorés par densité
-scatter2D(SA, CT, colvar = sigma_theta, pch = 16, cex = 1.25, add = TRUE,
-          clim = range(sigma.c), colkey = FALSE)
+# Points colorés par temps
+scatter2D(SA, CT, colvar = time_numeric, pch = 16, cex = 1.25, add = TRUE,
+          colkey = FALSE)
 
-# légende colorbar
-colkey(clim = range(sigma.c), dist = 0.005, side = 4, add = TRUE,
-       clab = expression("Density (kg·m"^-3*")"), col.clab = "black",
+# Colorbar avec labels de date
+colkey(clim = range(time_numeric), dist = 0.005, side = 4, add = TRUE,
+       clab = "", col.clab = "black",
        side.clab = 4, line.clab = 2.5, length = 1, width = 0.8,
-       col.axis = "black", col.ticks = "black", cex.axis = 0.9)
+       col.axis = "black", col.ticks = "black", cex.axis = 0.8,
+       at = tick_vals, labels = tick_labels)
 
 ```
