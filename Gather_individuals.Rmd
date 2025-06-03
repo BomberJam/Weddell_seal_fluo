@@ -55,4 +55,28 @@ saveRDS(all_data, file.path(base_dir, "all_deployment.rds"))
 
 ```
 
+JUSTE POUR REGARDER LES DONNEES
+```{r}
+DATA_FOLDER <- "oceanographic_data_corrected"
+DEPLOY_FOLDER <- "wd11"
+seal_name <- paste0(DEPLOY_FOLDER,"-909-18")
+SEAL_FILE <- paste0(seal_name, "_data.rds")
+RDS_SEAL_PATH <- file.path(DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
+
+deployment_profiles <- readRDS(RDS_SEAL_PATH)
+
+indices_non_null <- which(!is.na(deployment_profiles$temperature))
+dernier_indice_non_null <- tail(indices_non_null, 1)
+deployment_profiles$depth[dernier_indice_non_null]
+
+which(deployment_profiles$MLD == min(deployment_profiles$MLD, na.rm=T))
+
+# Extraire le profil n°107
+deployment_profiles$profile_id[]
+
+# Extraire le profil avec profile_id == 107
+profile_107 <- deployment_profiles[deployment_profiles$profile_id == 107, ]
+
+```
+
 
