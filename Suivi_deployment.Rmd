@@ -226,20 +226,38 @@ library(ggplot2)
 filtered_data <- deployment_profiles %>%
   filter(seal_id == seal_name)
 
-# prendre la dernière valeur non-NA de `light_raw` 
-last_depths <- filtered_data %>%
+# Derniers points température
+last_temp <- filtered_data %>%
+  group_by(profile_id) %>%  
+  filter(!is.na(temperature)) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+
+# Derniers points lumière
+last_light <- filtered_data %>%
   group_by(profile_id) %>%  
   filter(!is.na(light_raw)) %>%
   slice_tail(n = 1) %>%
   ungroup()
 
-# profondeur maximale atteinte pour chaque profil
-ggplot(last_depths, aes(x = date, y = depth)) + 
-  geom_point(color = "blue", size = 0.5) +
+# Derniers points chla
+last_chla <- filtered_data %>%
+  group_by(profile_id) %>%  
+  filter(!is.na(chla_raw)) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+
+# Tracer les deux types de points
+ggplot() + 
+  geom_point(data = last_temp, aes(x = date, y = depth), color = "blue", size = 0.5) +
+  geom_point(data = last_light, aes(x = date, y = depth), color = "red", size = 0.5) +
+  geom_point(data = last_chla, aes(x = date, y = depth), color = "green", size = 0.5) +
   scale_y_reverse() +
   scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%b") +
-  labs(title = paste0("Maximum depth per profile - ",seal_name), x = "", y = "Depth (m)") +
+  labs(title = paste0("Maximum depth per profile - ", seal_name),
+       x = "", y = "Depth (m)") +
   theme_minimal()
+
 
 ```
 
@@ -418,17 +436,16 @@ wrap_plots(plots, ncol = 1)
 library(ggplot2)
 library(dplyr)
 
-# Combiner et nettoyer
+# Nettoyer et ordonner sans filtrer MLD ni QD
 data <- bind_rows(deployment_profiles) %>%
-  filter(!is.na(MLD), !is.na(QD)) %>%
   arrange(deployment, seal_id, profile_id, date)
 
 data$date <- as.Date(data$date)
 year <- format(data$date, "%Y")
 
-# Graphique avec facettes
-ggplot(data, aes(x = date, y = MLD, color = seal_id)) +
-  geom_point(shape = 4) +
+# Mixed Layer Depth (MLD) plot
+ggplot(data %>% filter(!is.na(MLD)), aes(x = date, y = MLD, color = seal_id)) +
+  geom_point(shape = 20) +
   geom_smooth(method = "loess", formula = "y ~ x", linewidth = 0.25, se = FALSE) +
   scale_y_reverse() +
   scale_x_date(date_labels = "%b %Y") +
@@ -437,14 +454,17 @@ ggplot(data, aes(x = date, y = MLD, color = seal_id)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Graphique avec facettes
-ggplot(data, aes(x = date, y = QD, color = seal_id)) +
+```
+
+```{r}
+# Quenching Depth (QD) plot
+ggplot(data %>% filter(!is.na(QD)), aes(x = date, y = QD, color = seal_id)) +
   geom_point(shape = 4) +
   geom_smooth(method = "loess", formula = "y ~ x", linewidth = 0.25, se = FALSE) +
   scale_y_reverse() +
   scale_x_date(date_labels = "%b %Y") +
   facet_wrap(~ deployment, scales = "free_x") + 
-  labs(x = "", y = "Depth (m)", title = paste0("Quenching depth for deployment ", data$deployment, " (", year,")")) +
+  labs(x = "", y = "Depth (m)", title = paste0("Quenching Depth for deployment ", data$deployment, " (", year,")")) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
@@ -505,7 +525,7 @@ plot_light_profile <- function(df, seal_name, profile_id) {
     filter(seal_id == seal_name, profile_id == profile_id) %>%
     distinct(date) %>%
     arrange(date) %>%
-    slice(1) %>%
+    slice(profile_id) %>%
     pull(date)
   
   profile_to_plot <- df %>%
@@ -516,9 +536,11 @@ plot_light_profile <- function(df, seal_name, profile_id) {
   light_corrected <- profile_to_plot$light_corrected
 
   xlim_vals <- range(c(light_raw, light_corrected), na.rm = TRUE)
+  valid_indices <- !is.na(light_raw) | !is.na(light_corrected)
+  ylim_vals <- range(depth[valid_indices], na.rm = TRUE)
 
   plot(light_raw, depth, type = "l", col = "blue", lwd = 2,
-       ylim = rev(range(depth, na.rm = TRUE)), xlim = xlim_vals,
+       ylim = rev(ylim_vals), xlim = xlim_vals,
        xlab = "Light (µmol/m²/sec)", ylab = "Depth (m)",
        main = paste0("Light profile ", profile_id, " - ", seal_name))
 
@@ -528,6 +550,6 @@ plot_light_profile <- function(df, seal_name, profile_id) {
          col = c("blue", "red"), lty = 1, lwd = 2, bty = "n")
 }
 
-plot_light_profile(deployment_profiles, seal_name = "wd11-682-17", profile_id = 1)
+plot_light_profile(deployment_profiles, seal_name = "wd11-913-18", profile_id = )
 
 ```
