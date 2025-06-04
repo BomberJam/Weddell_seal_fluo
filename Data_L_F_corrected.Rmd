@@ -89,15 +89,22 @@ interp_results <- lapply(cols, function(col) {
 names(interp_results) <- paste0(cols, "_corr")
 df_interp <- as.data.frame(interp_results)
 
-df_original <- data.frame(lon = lon, lat = lat)
+```
 
-ggplot() +
-  geom_point(data = df_original, aes(x = lon, y = lat, color = "Original"), alpha = 0.4, size = 2) +
-  geom_point(data = df_interp, aes(x = interpLon_corr, y = interpLat_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
-  scale_color_manual(name = "Type de données", values = c("Original" = "blue", "Interpolated" = "red")) +
-  labs(title = "Corrected Lat/Lon", x = "Longitude", y = "Latitude") +
-  theme_minimal()
+```{r}
 
+# df_original <- data.frame(lon = lon, lat = lat)
+# 
+# ggplot() +
+#   geom_point(data = df_original, aes(x = lon, y = lat, color = "Original"), alpha = 0.4, size = 2) +
+#   geom_point(data = df_interp, aes(x = interpLon_corr, y = interpLat_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
+#   scale_color_manual(name = "Type de données", values = c("Original" = "blue", "Interpolated" = "red")) +
+#   labs(title = "Corrected Lat/Lon", x = "Longitude", y = "Latitude") +
+#   # ylim(-70, -63) + # même axe que dans le code de Loïc (pour vérifier) 
+#   theme_minimal()
+```
+
+```{r}
 lon <- df_interp$interpLon_corr
 lat <- df_interp$interpLat_corr
 ```
@@ -166,32 +173,25 @@ for (i in validProfiles) {
   }
 }
 
-# Créer un data frame avec les valeurs valides
+# Créer un data frame pour les ggplots et la sauvegarde des plots
 df_mld <- data.frame(
   profile = validProfiles,
   value = mld_vec[validProfiles]
 )
+```
 
-# Graphique ggplot
-ggplot(df_mld, aes(x = profile, y = value)) +
-  geom_point(shape = 4, color = "blue") +
-  geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "red", linewidth = 0.25, se = FALSE) +
-  scale_y_reverse() +
-  labs(x = "Profile", y = "Depth (m)", title = "Mixed Layer Depth (MLD)") +
-  theme_minimal()
+```{r}
+
+# ggplot(df_mld, aes(x = profile, y = value)) +
+#   geom_point(shape = 4, color = "blue") +
+#   geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "red", linewidth = 0.25, se = FALSE) +
+#   scale_y_reverse() +
+#   labs(x = "Profile", y = "Depth (m)", title = paste0("Mixed Layer Depth (MLD) - ",SEAL_NAME)) +
+#   theme_minimal()
 
 ```
 
 <h2>LIGHT</h2>
-<h4>Estimating the number of empty light profiles</h4>
-```{r NaColumns}
-col_na_only <- apply(raw_light, 2, function(col) all(is.na(col)))
-
-which(col_na_only)
-
-cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
-```
-
 <h4>Computing Dark value for light profile</h4>
 ```{r DarkValue}
 
@@ -202,26 +202,20 @@ alpha = 0.01
 min_botIntegBound = 150
 
 light_corrected_non_log <- light_non_log
-# light_corrected_non_log_temp <- light_non_log
 
 # Trouver les colonnes non vides dans `light`
 col_na_only <- apply(light_non_log, 2, function(col) all(is.na(col)))
-lightNonNan_non_log <- light_non_log[,!col_na_only]
 valid_cols <- which(!col_na_only)
 
-# Initialiser les vecteurs pour stocker les résultats
-PCST_vec <- rep(NA, ncol(lightNonNan_non_log))
-PDARK_vec <- rep(NA, ncol(lightNonNan_non_log))
-VDARK_vec <- rep(NA, ncol(lightNonNan_non_log))
 delta_for_cstLIGHT <- 1e-8 # define standard delta between min and max of profile to eliminate profile for being a constant profile
-max_depth <- nrow(light_non_log)
+max_depth <- MAX_DEPTH
 
 # Boucle sur les indices des colonnes non vides
 for (ii_temp in valid_cols) {
 
   # Initialiser les variables locales
-  PCST_temp <- MAX_CHLA_DEPTH
-  PDARK_temp <- MAX_CHLA_DEPTH
+  PCST_temp <- max_depth
+  PDARK_temp <- max_depth
   VDARK_temp <- 0
 
   # Indices des premières et dernières valeurs non NA dans le profil
@@ -238,11 +232,16 @@ for (ii_temp in valid_cols) {
     PCST_temp <- NA
   } else {
     for (jj_temp in first_non_NaN_temp:(last_non_NaN_temp - 1)) {
-      # Calcul de l'amplitude (range) dans la partie profonde
-      range_temp <- diff(range(light_corrected_non_log[jj_temp:last_non_NaN_temp], na.rm = TRUE))
-
+      # simple verif pour être sur de ne pas traiter des NA
+      vec_temp <- light_corrected_non_log[jj_temp:last_non_NaN_temp, ii_temp]
+      vec_temp <- vec_temp[!is.na(vec_temp)]
+      if (length(vec_temp) == 0) {
+        range_temp <- NA
+      } else {
+        # Calcul de l'amplitude (range) dans la partie profonde
+        range_temp <- diff(range(vec_temp))
+      }
       if (is.na(range_temp) || range_temp <= delta_for_cstLIGHT) {
-
         # Signal considéré comme constant
         cstDetect_temp <- 1
         break # end for loop when range < delta_for_cstLIGHT (1e-8) i.e. LIGHT signal is considered constant in interval j:bottom
@@ -342,7 +341,7 @@ for (ii_temp in valid_cols) {
     light_corrected_non_log[toNaN_temp, ii_temp] <- NA
   }
 }
-light_corrected_log <- log(pmax(light_corrected_non_log, 1e-10))
+light_corrected_log <- log(pmax(light_corrected_non_log, 1e-10));
 
 ```
 
@@ -360,64 +359,72 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 
 <h4>Plotting one light profile, before and after dark value correction</h4>
 ```{r LightProfilePlot}
+# Plot
 
-plot(light_non_log[1:MAX_CHLA_DEPTH, idprofile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
-     ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])), xlim = c(0, 3e-4),
-     xlab = "Light ln(µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",idprofile," - Original and Corrected\n", SEAL_NAME))
-
-lines(light_corrected_non_log[1:MAX_CHLA_DEPTH, idprofile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
-legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
-
-abline(h = quenchDepth_vec[idprofile], col = "cyan", lty = 2)
-abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
-
-legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
-
+# valid_indices <- !is.na(light_non_log[, idprofile]) | !is.na(light_corrected_non_log[, idprofile])
+# xlim_vals <- range(c(light_non_log[, idprofile], light_corrected_non_log[, idprofile]), na.rm = TRUE)
+# ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+# 
+# plot(light_non_log[, idprofile], pres_vec, type = "l", col = "blue",
+#      ylim = rev(ylim_vals), xlim = c(xlim_vals),
+#      xlab = "Light ln(µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",idprofile," - Original and Corrected\n", SEAL_NAME))
+# 
+# lines(light_corrected_non_log[, idprofile], pres_vec, col = "red")
+# legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
+# 
+# abline(h = quenchDepth_vec[idprofile], col = "cyan", lty = 2)
+# abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
+# 
+# legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
 
 ```
 
 <h4>Plotting all light profiles, before and after dark value correction</h4>
 ```{r PlotAllProfiles-original&Corrected}
-matplot(raw_light[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
-        type = "l",
-        ylim = rev(c(0, MAX_CHLA_DEPTH)),
-        lty = 1,
-        xlab = "Light ln(µmol/m²/s)",
-        ylab = "Depth (m)",
-        main = paste0("Light profiles : ", SEAL_NAME))
-grid()
+# Plot
 
-matplot(light_corrected_log[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
-        type = "l",
-        xlim = c(-10,10),
-        ylim = rev(c(0, MAX_CHLA_DEPTH)),
-        lty = 1,
-        xlab = "Light ln(µmol/m²/s)",
-        ylab = "Depth (m)",
-        main = paste0("Light profiles corrected : ", SEAL_NAME))
-grid()
+# matplot(raw_light[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
+#         type = "l",
+#         ylim = rev(c(0, MAX_CHLA_DEPTH)),
+#         lty = 1,
+#         xlab = "Light ln(µmol/m²/s)",
+#         ylab = "Depth (m)",
+#         main = paste0("Light profiles : ", SEAL_NAME))
+# grid()
+# 
+# matplot(light_corrected_log[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
+#         type = "l",
+#         xlim = c(-10,10),
+#         ylim = rev(c(0, MAX_CHLA_DEPTH)),
+#         lty = 1,
+#         xlab = "Light ln(µmol/m²/s)",
+#         ylab = "Depth (m)",
+#         main = paste0("Light profiles corrected : ", SEAL_NAME))
+# grid()
 
 ```
 
 <h4>Total light for each profile</h4>
 ```{r Total-Light}
-light_subset <- light_corrected_non_log [1:MAX_CHLA_DEPTH, !col_na_only]
+# Plot
 
-total_light <- colSums(light_subset, na.rm = TRUE)
-
-plot(
-  total_light,
-  type = "b",                     
-  pch = 18,                        
-  col = "blue",
-  xlab = "",
-  ylab = "Total lumière (µmol/m²/s)",
-  main = paste0("Lumière totale par profile : ", SEAL_NAME),
-  xaxt = "n"  # Supprime l'axe x par défaut
-)
-
-# Ajout d'un axe x avec les dates
-axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2, cex.axis = 0.7)
+# light_subset <- light_corrected_non_log [1:MAX_CHLA_DEPTH, !col_na_only]
+# 
+# total_light <- colSums(light_subset, na.rm = TRUE)
+# 
+# plot(
+#   total_light,
+#   type = "b",                     
+#   pch = 18,                        
+#   col = "blue",
+#   xlab = "",
+#   ylab = "Total lumière (µmol/m²/s)",
+#   main = paste0("Lumière totale par profile : ", SEAL_NAME),
+#   xaxt = "n"  # Supprime l'axe x par défaut
+# )
+# 
+# # Ajout d'un axe x avec les dates
+# axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2, cex.axis = 0.7)
 
 ```
 
@@ -467,7 +474,7 @@ for (i in 1:nlight) {
   dev.off()
 }
 
-cat(nlight, "profils enregistrés dans", dir_plot, "\n")
+# cat(nlight, "profils enregistrés dans", dir_plot, "\n")
 
 ```
 
