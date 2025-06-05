@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-# Regroupe tous les individus d'un déploiement dans un rds "combined_"wd11".rds"
+# Regroupe les individus d'un déploiement rds "combined_wdxx.rds"
 
 library(dplyr)
 

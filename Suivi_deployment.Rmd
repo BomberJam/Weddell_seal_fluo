@@ -10,14 +10,31 @@ knitr::opts_chunk$set(echo = TRUE)
 #source("plot_dive.R")
 ```
 
+## Tâches
+
+- [x] Script analyse 2019  
+- [x] Plot d’analyses (cmb d’individus)  
+- [x] Time series (visualisation mauvaise sur la page html)
+- [x] Maximum depth profile  
+- [x] T/S diagram (global + intervalles de profondeur)  
+- [x] Plot Chla Light (utilisation de la librairie Plotly, pas encore satisfait)  
+- [x] Plot TSLF : Data_L_F_Corrected
+- [x] Investiguer sur les DK vides : Data_L_F_Corrected
+- [x] Correction plot MDL (nom de plots à revoir OK) (autre lissage que loess : c'est le meilleur essayé)
+- [ ] Cartes tous individus par mois pour 2019 (1 pour lumière, 1 pour chla biplot)  
+- [x] Lunar package relation avec météo FR (calcul de phase) shift = UT + DDU (12) : Maps
+- [ ] Carte tous les individus (1 couleur par individu)
+- [ ] Rajouter les infos glace dans les rds
+- [ ] Trouver littérature (à cmb on met le seuil pour la T°)
+
 ```{r}
 library(dplyr)
 library(lubridate)
 
 DATA_FOLDER <- "oceanographic_data_corrected"
 DEPLOY_FOLDER <- "wd11"
-seal_name <- paste0(DEPLOY_FOLDER,"-913-18")
-SEAL_FILE <- paste0(seal_name, "_data.rds")
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-913-18")
+SEAL_FILE <- paste0(SEAL_NAME, "_data.rds")
 RDS_SEAL_PATH <- file.path(DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 
 DEPLOYMENT_FILE <- paste0("combined_",DEPLOY_FOLDER,".rds")
@@ -40,6 +57,8 @@ RDS_DEPLOYMENT_PATH <- file.path(DATA_FOLDER, DEPLOY_FOLDER, DEPLOYMENT_FILE)
 # AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 
 deployment_profiles <- readRDS(RDS_DEPLOYMENT_PATH)
+
+PROFILE_ID <- 1
 
 # Vérifie que la colonne "date" est bien au bon format
 deployment_profiles <- deployment_profiles %>%
@@ -224,7 +243,7 @@ library(ggplot2)
 
 # filtrer avec seal_id
 filtered_data <- deployment_profiles %>%
-  filter(seal_id == seal_name)
+  filter(seal_id == SEAL_NAME)
 
 # Derniers points température
 last_temp <- filtered_data %>%
@@ -254,8 +273,7 @@ ggplot() +
   geom_point(data = last_chla, aes(x = date, y = depth), color = "green", size = 0.5) +
   scale_y_reverse() +
   scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%b") +
-  labs(title = paste0("Maximum depth per profile - ", seal_name),
-       x = "", y = "Depth (m)") +
+  labs(title = paste0("Maximum depth per profile - ", SEAL_NAME), x = "", y = "Depth (m)") +
   theme_minimal()
 
 
@@ -311,7 +329,7 @@ par(mar = c(5, 5, 4, 6))  # Marges du graphique
 
 # Tracer les isopycnes
 contour2D(x = sa_grid, y = ct_grid, z = sigma.c, lwd = 2,
-          main = paste0("T/S Diagram (TEOS-10) - ", seal_name),
+          main = paste0("T/S Diagram (TEOS-10) - ", SEAL_NAME),
           col = "black",
           xlab = expression("Salinity"),
           ylab = expression("Conservative Temperature ("*~degree*C*")"))
@@ -331,14 +349,14 @@ colkey(clim = range(time_numeric), dist = 0.005, side = 4, add = TRUE,
 library(gsw)
 library(plot3D)
 
-data <- readRDS(RDS_SEAL_PATH)
+data_one_seal <- readRDS(RDS_SEAL_PATH)
 
 # Extraire les variables
-sal <- data$salinity
-temp <- data$temperature
-lon <- data$lon
-lat <- data$lat
-depth <- data$depth  # Assure-toi que cette variable existe
+sal <- data_one_seal$salinity
+temp <- data_one_seal$temperature
+lon <- data_one_seal$lon
+lat <- data_one_seal$lat
+depth <- data_one_seal$depth  # Assure-toi que cette variable existe
 
 # Filtrer les valeurs manquantes
 valid <- !is.na(sal) & !is.na(temp) & !is.na(lon) & !is.na(lat) & !is.na(depth)
@@ -347,7 +365,7 @@ temp <- temp[valid]
 lon <- lon[valid]
 lat <- lat[valid]
 depth <- depth[valid]
-time <- data$date[valid]
+time <- data_one_seal$date[valid]
 
 # intervalles de profondeur (mètres)
 depth_bins <- list("0-100" = c(0, 20),
@@ -402,17 +420,19 @@ library(dplyr)
 library(tidyr)
 library(patchwork)
 
-# Suppression NA
-valid <- with(data, !is.na(date) & !is.na(depth) & !is.na(temperature) & !is.na(salinity) & !is.na(light_raw) & !is.na(chla_raw))
-data_valid <- data[valid, ]
-
 # Ajouter densité
-data_valid$sigma0 <- gsw_sigma0(data_valid$salinity, gsw_CT_from_t(data_valid$salinity, data_valid$temperature, 0))
+data_one_seal$sigma0 <- gsw_sigma0(data_one_seal$salinity, gsw_CT_from_t(data_one_seal$salinity, data_one_seal$temperature, 0))
 
 # Format long
-data_long <- data_valid %>%
-  select(date, depth, temperature, salinity, sigma0, light_raw, chla_raw) %>%
-  pivot_longer(cols = -c(date, depth), names_to = "variable", values_to = "value")
+data_long <- data_one_seal %>%
+  select(date, depth, light_raw, chla_raw, temperature, salinity, sigma0) %>%
+  pivot_longer(cols = -c(date, depth), names_to = "variable", values_to = "value") %>%
+  mutate(variable = recode(variable,
+                           temperature = "temp",
+                           salinity = "sal",
+                           sigma0 = "dens",
+                           light_raw = "light",
+                           chla_raw = "chla"))
 
 # plot
 plots <- data_long %>%
@@ -420,12 +440,13 @@ plots <- data_long %>%
   lapply(function(df) {
     ggplot(df, aes(x = date, y = depth, fill = value)) +
       geom_tile() +
-      scale_y_reverse(limits = c(500, 0)) +
-      scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"), name = unique(df$variable))+
-      labs(title = unique(df$variable), x = "", y = "Depth (m)") +
+      scale_y_reverse(limits = c(300, 0)) +
+      scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"), name = unique(df$variable), na.value = NA
+)+
+      guides(fill = guide_colorbar(barwidth = 0.5, barheight = 3)) +
+      labs(title = paste0(unique(df$variable)," - ",SEAL_NAME), x = "", y = "Depth (m)") +
       theme_minimal(base_size = 9)
   })
-
 # Assembler les plots verticalement
 wrap_plots(plots, ncol = 1)
 
@@ -455,7 +476,7 @@ ggplot(data %>% filter(!is.na(MLD)), aes(x = date, y = MLD, color = seal_id)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
-
+<h4> Quenching depth </h4>
 ```{r}
 # Quenching Depth (QD) plot
 ggplot(data %>% filter(!is.na(QD)), aes(x = date, y = QD, color = seal_id)) +
@@ -471,52 +492,6 @@ ggplot(data %>% filter(!is.na(QD)), aes(x = date, y = QD, color = seal_id)) +
 
 <h2> Light </h2>
 <h4> Light raw and corrected </h4>
-```{r}
-library(plotly)
-
-fig <- plot_ly()
-
-# Première trace avec l'axe X principal (xaxis)
-fig <- fig %>% add_trace(
-  x = ~1:3, y = ~10*(4:6),
-  name = "xaxis 1 data",
-  mode = "lines+markers",
-  type = "scatter"
-)
-
-# Définition de l'axe X secondaire (en haut du graphique)
-ax2 <- list(
-  side = "top",
-  overlaying = "x",
-  title = "<b>secondary</b> xaxis title",
-  tickfont = list(color = "blue"),
-  titlefont = list(color = "blue")
-)
-
-# Seconde trace avec l'axe X secondaire (xaxis2)
-fig <- fig %>% add_trace(
-  x = ~2:4, y = ~4:6,
-  name = "xaxis 2 data",
-  xaxis = "x2",
-  mode = "lines+markers",
-  type = "scatter"
-)
-
-# Mise en page du graphique
-fig <- fig %>% layout(
-  title = "Double X Axis Example",
-  xaxis2 = ax2,
-  xaxis = list(title = "<b>primary</b> xaxis title"),
-  yaxis = list(title = "yaxis title"),
-  plot_bgcolor = '#e5ecf6'
-)
-
-fig
-
-
-```
-
-
 ```{r}
 
 plot_light_profile <- function(df, seal_name, profile_id) {
@@ -534,6 +509,8 @@ plot_light_profile <- function(df, seal_name, profile_id) {
   depth <- profile_to_plot$depth
   light_raw <- profile_to_plot$light_raw
   light_corrected <- profile_to_plot$light_corrected
+  mld <- profile_to_plot$MLD
+  qd <- profile_to_plot$QD
 
   xlim_vals <- range(c(light_raw, light_corrected), na.rm = TRUE)
   valid_indices <- !is.na(light_raw) | !is.na(light_corrected)
@@ -548,8 +525,34 @@ plot_light_profile <- function(df, seal_name, profile_id) {
 
   legend("bottomright", legend = c("light_raw", "light_corrected"),
          col = c("blue", "red"), lty = 1, lwd = 2, bty = "n")
-}
+  
+  abline(h = qd, col = "cyan", lty = 2)
+  abline(h = mld, col = "purple", lty = 2)
 
-plot_light_profile(deployment_profiles, seal_name = "wd11-913-18", profile_id = )
+  legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
+}
+plot_light_profile(deployment_profiles, seal_name = SEAL_NAME, profile_id = PROFILE_ID)
+
+```
+
+<h4>Plotting all light profiles, before and after dark value correction</h4>
+```{r PlotAllProfiles-original&Corrected}
+
+matplot(deployment_profiles$light_raw, deployment_profiles$depth,
+        type = "l",
+        ylim = rev(c(0, 200)),
+        lty = 1,
+        xlab = "Light ln(µmol/m²/s)",
+        ylab = "Depth (m)")
+grid()
+
+
+matplot(deployment_profiles$light_corrected, deployment_profiles$depth,
+        type = "l",
+        ylim = rev(c(0, 200)),
+        lty = 1,
+        xlab = "Light ln(µmol/m²/s)",
+        ylab = "Depth (m)")
+grid()
 
 ```
