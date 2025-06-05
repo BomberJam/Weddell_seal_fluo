@@ -823,31 +823,43 @@ fig
 <h2>Light Temperature Salinity Fluo</h2>
 <h4>Plotting one Light temperature salinity & FLUO profile</h4>
 ```{r PlotProfile_LTSC}
-# Création du data.frame long
-df_profile <- data.frame(
+# Création du data.frame profilé brut (avec profondeur tronquée)
+df_raw <- data.frame(
   depth = pres_vec,
   Light = light_corrected_log[, idprofile],
   Temperature = temp[, idprofile],
   Salinity = sal[, idprofile],
   CHLA = chla_corrected_q[, idprofile]
-) %>% pivot_longer(cols = -depth, names_to = "variable", values_to = "value")
+)
 
-# ggplot avec facet
+# Trouver la profondeur max de CHLA non nulle
+max_depth_chla  <- tail(which(!is.na(df_raw$CHLA)), 1)
+
+
+df_profile <- df_raw %>%
+  pivot_longer(cols = -depth, names_to = "variable", values_to = "value")
+
+df_profile <- df_profile %>% filter(depth <= max_depth_chla)
+
+
+# Tracé final
 ggplot(df_profile, aes(x = value, y = depth)) +
   geom_line() +
-  scale_y_reverse(limits = c(MAX_CHLA_DEPTH, 0)) +
+  scale_y_reverse(limits = c(max_depth_chla, 5)) +
   facet_wrap(~ variable, scales = "free_x", nrow = 1) +
   labs(x = NULL, y = "Depth (m)") +
   theme_minimal() +
   theme(
     strip.text = element_text(size = 12, face = "bold"),
     panel.grid.minor = element_blank(),
-    panel.grid.major = element_line(color = "grey80")) +
-    ggtitle(paste0(SEAL_NAME, " : ", idprofile, "/", ncol(light_corrected_log), " (", format(dateTime[idprofile], "%Y-%m-%d"), ")"))
+    panel.grid.major = element_line(color = "grey80")
+  ) +
+  ggtitle(paste0(SEAL_NAME, " : ", idprofile, "/", ncol(light_corrected_log),
+                 " (", format(dateTime[idprofile], "%Y-%m-%d"), ")"))
 
 ```
 
-<h2>CSV Export</h2>
+<h2>RDS Export</h2>
 ```{r}
 
 # Nombre de profondeurs et de profils
