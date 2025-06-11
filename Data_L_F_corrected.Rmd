@@ -454,6 +454,9 @@ axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2
 
 <h4>Saving light profiles </h4>
 ```{r SaveAndClassifyLightProfiles}
+valid_indices <- !is.na(light_non_log[, idprofile]) | !is.na(light_corrected_non_log[, idprofile])
+xlim_vals <- range(c(light_non_log[, idprofile], light_corrected_non_log[, idprofile]), na.rm = TRUE)
+ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
 
 # Dossiers de sortie
 dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME, "light")
@@ -470,8 +473,8 @@ for (i in 1:nlight) {
        pres_vec[1:MAX_CHLA_DEPTH],
        type = "l",
        col = "blue",
-       ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])),
-       xlim = c(0, 3e-4),
+       ylim = rev(ylim_vals),
+       xlim = xlim_vals,
        xlab = "Light ln(µmol/m²/sec)",
        ylab = "Depth (m)",
        main = paste0("Light profile ", i, " - Original and Corrected\n", SEAL_NAME))
@@ -589,9 +592,12 @@ abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
 legend("bottomleft", legend = "MLD", col =  "purple", lty = 1, bty="n")
 ```
 ```{r}
+valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(raw_chla[, idprofile])
+xlim_vals <- range(c(chla_corrected_dk[, idprofile], raw_chla[, idprofile]), na.rm = TRUE)
+ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
 
 # Dossiers de sortie
-dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla")
+dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_dk")
 dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
 
 nchla = ncol(chla_corrected_dk)
@@ -605,8 +611,8 @@ for (i in 1:nchla) {
        pres_vec[1:MAX_CHLA_DEPTH],
        type = "l",
        col = "blue",
-       ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])),
-       xlim = c(0, 3e-4),
+       ylim = rev(ylim_vals),
+       xlim = xlim_vals,
        xlab = "Chl-a (mg/m³))",
        ylab = "Depth (m)",
        main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME))
@@ -698,7 +704,6 @@ chla_corrected_q <- CHLA_nadRegDkNpq
 
 <h4>Plotting NPQ correction for Chl-a</h4>
 ```{r NPQ_plot}
-idprofile <- 2
 valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(chla_corrected_q[, idprofile])
 xlim_vals <- range(c(chla_corrected_dk[, idprofile], chla_corrected_q[, idprofile]), na.rm = TRUE)
 ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
@@ -722,6 +727,27 @@ abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
 
 legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
 
+```
+<h4>Flags</h4>
+```{r}
+solar_angle <- sunAngle(date, lon, lat)$altitude
+n_profile <- ncol(chla_corrected_q)
+flags <- rep(0, n_profile)
+
+# NPQ layer might be thinner
+flags[exp(light_corrected_non_log[4,]) < 15] <- 1
+# Shallow mixing conditions
+flags[mld_vec <= quenchDepth_vec] <- 2
+# Night profile
+flags[solar_angle <= -12] <- 7
+# Bottom of npq layer not reached
+flags[is.na(quenchDepth_vec)] <- 8
+# No Light data
+sumNan <- colSums(light_corrected_non_log, na.rm = TRUE)
+flags[sumNan == 0] <- 9
+# 0 : OK
+
+flags
 ```
 
 <h4>Computing total fluo per profile after correction</h4>
@@ -747,51 +773,104 @@ axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2
 
 <h4>Saving and classifying Chl-a profiles</h4>
 ```{r SaveAndClassifyChlaProfiles}
+valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(chla_corrected_q[, idprofile])
+xlim_vals <- range(c(chla_corrected_dk[, idprofile], chla_corrected_q[, idprofile]), na.rm = TRUE)
+ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
 
-# dir_standard = "profils_chla_standard"
-# dir_atypique = "profils_chla_atypique"
-# dir.create(dir_standard, showWarnings = FALSE)
-# dir.create(dir_atypique, showWarnings = FALSE)
-# 
-# nchla = ncol(chla)
-# 
-# for (i in 1:nchla) {
-#   profil_chla <- chla[, i]
-#   
-#   delta_chla <- profil_chla - profil_chla[1]
-# 
-#   if (any(delta_chla > 0, na.rm = TRUE)) {
-#     class_dir <- dir_atypique
-#   } else {
-#     class_dir <- dir_standard
-#   }
-#   
-#   filename <- paste0(class_dir, "/profil_chla", i, ".png")
-#   
-#   png(filename, width = 800, height = 600)
-#   
-#   plot(profil_chla, pres_vec,
-#        type = "l",
-#        xlim = c(0,0.1),
-#        ylim = rev(c(0, MAX_CHLA_DEPTH)),
-#        xlab = "Chl-a (mg/m³)",
-#        ylab = "Press",
-#        main = paste("Profil chla - Col", i))
-#   grid()
-#   
-#   abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
-#   abline(h = df_mld$value[i], col = "purple", lty = 2)
-# 
-#   legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
-#   
-#   dev.off()
-# }
+# Dossiers de sortie
+dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_npq")
+dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
 
-# cat("Classification terminée :\n")
-# cat(nchla, "profils analysés\n")
-# cat("->", length(list.files(dir_standard)), "profils standards dans", dir_standard, "\n")
-# cat("->", length(list.files(dir_atypique)), "profils atypiques dans", dir_atypique, "\n\n")
+nchla = ncol(chla_corrected_q)
 
+for (i in 1:nchla) {
+  filename <- paste0(dir_plot, "/", SEAL_NAME, "_NPQ", i, ".png")
+  
+  png(filename, width = 800, height = 600)
+  
+  plot(chla_corrected_dk[1:MAX_CHLA_DEPTH, i],
+       pres_vec[1:MAX_CHLA_DEPTH],
+       type = "l",
+       col = "blue",
+       ylim = rev(ylim_vals),
+       xlim = xlim_vals,
+       xlab = "Chl-a (mg/m³))",
+       ylab = "Depth (m)",
+       main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME))
+  
+  lines(chla_corrected_q[1:MAX_CHLA_DEPTH, i],
+        pres_vec[1:MAX_CHLA_DEPTH],
+        col = "red")
+  
+  legend("bottomright",
+         legend = c("Original", "Corrected"),
+         col = c("blue", "red"),
+         lty = 1,
+         bty = "n")
+  
+  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+  abline(h = df_mld$value[i], col = "purple", lty = 2)
+  
+  legend("bottomleft",
+         legend = c("Quenching Depth", "MLD"),
+         col = c("cyan", "purple"),
+         lty = 2,
+         bty = "n")
+  
+  dev.off()
+}
+```
+
+```{r SaveAndClassifyChlaProfiles}
+valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(chla_corrected_q[, idprofile])
+xlim_vals <- range(c(chla_corrected_dk[, idprofile], chla_corrected_q[, idprofile]), na.rm = TRUE)
+ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+
+# Dossiers de sortie
+dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_dk_npq")
+dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
+
+nchla = ncol(raw_chla)
+
+for (i in 1:nchla) {
+  filename <- paste0(dir_plot, "/", SEAL_NAME, "_DK_NPQ", i, ".png")
+  
+  png(filename, width = 800, height = 600)
+  
+  plot(chla_corrected_dk[1:MAX_CHLA_DEPTH, i],
+       pres_vec[1:MAX_CHLA_DEPTH],
+       type = "l",
+       col = "blue",
+       ylim = rev(ylim_vals),
+       xlim = xlim_vals,
+       ylab = "Depth (m)",
+       main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME))
+   
+  lines(raw_chla[1:MAX_CHLA_DEPTH, i],
+        pres_vec[1:MAX_CHLA_DEPTH],
+        col = "darkgreen")
+  
+  lines(chla_corrected_q[1:MAX_CHLA_DEPTH, i],
+        pres_vec[1:MAX_CHLA_DEPTH],
+        col = "red")
+  
+  legend("bottomright",
+         legend = c("Dark value", "Original", "NPQ"),
+         col = c("blue", "darkgreen", "red"),
+         lty = 1,
+         bty = "n")
+  
+  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+  abline(h = df_mld$value[i], col = "purple", lty = 2)
+  
+  legend("bottomleft",
+         legend = c("Quenching Depth", "MLD"),
+         col = c("cyan", "purple"),
+         lty = 2,
+         bty = "n")
+  
+  dev.off()
+}
 ```
 
 <h2>Light and fluo corrected : profiles</h2>

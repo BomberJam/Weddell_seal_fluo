@@ -436,15 +436,37 @@ data_long <- data_one_seal %>%
                            chla_raw = "chla")) %>%
   mutate(variable = factor(variable, levels = c("light", "chla", "temp", "sal", "dens")))
 
+limits_list <- list(
+  "light" = c(-10, 10),
+  "chla" = c(0, 10),
+  "temp" = c(-2, 0),
+  "sal" = c(33, 35),
+  "dens" = c(26, 28)
+)
+
+depth_list <- list(
+  "light" = c(200, 0),
+  "chla" = c(200, 0),
+  "temp" = c(600, 0),
+  "sal" = c(600, 0),
+  "dens" = c(600, 0)
+)
+
 # plot
 plots <- data_long %>%
   group_split(variable) %>%
   lapply(function(df) {
+    
+    var <- unique(df$variable)
+    lims <- limits_list[[var]]
+    depth <- depth_list[[var]]
+    
     ggplot(df, aes(x = date, y = depth, fill = value)) +
       geom_tile() +
-      scale_y_reverse(limits = c(300, 0)) +
+      scale_y_reverse(limits = depth) +
       scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%m-%Y") +
-      scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"), 
+      scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"),
+                           limits = lims,
                            name = unique(df$variable), na.value = NA)+
       guides(fill = guide_colorbar(barwidth = 0.5, barheight = 3)) +
       labs(title = paste0(unique(df$variable)," - ",SEAL_NAME), x = "", y = "Depth (m)") +
