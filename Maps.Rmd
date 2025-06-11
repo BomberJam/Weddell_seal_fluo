@@ -40,7 +40,10 @@ DDU_loc$lat = -66.66306
 DDU_loc$lon = 140.00083
 DDU_loc=as.data.frame(DDU_loc)
 # 66°39’47”S, 140°00’03”E
-
+LON_MIN <- 130
+LON_MAX <- 150
+LAT_MIN <- -68
+LAT_MAX <- -65
 ```
 
 <h2>Paths and NetCDF extraction</h2>
@@ -110,14 +113,6 @@ df_profiles_date <- df_data_corrected[!duplicated(df_data_corrected$profile_id),
 date <- df_profiles_date$date
 ```
 
-<h4>Preparing coordinates for Fast ice / SIC map</h4>
-```{r setWindow_fastIce_SIC}
-LON_MIN <- 130
-LON_MAX <- 150
-LAT_MIN <- -68
-LAT_MAX <- -65
-```
-
 <h4>Loading bathymetry</h4>
 ```{r Bathy}
 fine_topo <- raster(BATHY_PATH_FINE)
@@ -175,44 +170,53 @@ plot(x_sub2, legend = FALSE)
 #description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
 x_sub2=round(x_sub2)
 
-continent <- x_sub2
-continent[x_sub2 != 1] <- NA
-continent[x_sub2 == 1] <- 1
+# continent <- x_sub2
+# continent[x_sub2 != 1] <- NA
+# continent[x_sub2 == 1] <- 1
+# 
+# glacier <- x_sub2
+# glacier[x_sub2 != 4] <- NA
+# glacier[x_sub2 == 4] <- 1
+# 
+# ice_shelf <- x_sub2
+# ice_shelf[x_sub2 != 3] <- NA
+# ice_shelf[x_sub2 == 3] <- 1
 
-glacier <- x_sub2
-glacier[x_sub2 != 4] <- NA
-glacier[x_sub2 == 4] <- 1
+x_sub2_df <- as.data.frame(x_sub2, xy = TRUE)
+x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with("2019"), names_to = "month_label", values_to = "value")
+x_sub2_long_select <- x_sub2_long # %>% filter(value == c(1,3,4))
 
-ice_shelf <- x_sub2
-ice_shelf[x_sub2 != 3] <- NA
-ice_shelf[x_sub2 == 3] <- 1
+# x_sub2_wide <- x_sub2_long %>%
+#   pivot_wider(names_from = month, values_from = value)
+# 
+# x_sub2_wide_filtered <- x_sub2_wide %>%
+#   filter(if_any(starts_with("2019"), ~ .x %in% c(1,3,4)))
 
 ```
 
 <h4>Loading and cropping AMSR raster</h4>
 ```{r AMSR}
-wgs <- "+proj=longlat +ellps=WGS84"
- amsr_raster <- raster(AMSR_PATH)
- amsr_raster[amsr_raster > 100] <- NA_real_
- amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
- plot(amsr_raster)
- 
- points <- cbind(lon = c(LON_MIN, LON_MAX), lat = c(LAT_MIN, LAT_MAX))
- 
- boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
- amsr_cropped=crop(amsr_raster, boxext)
- plot(amsr_cropped)
- 
- amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
- plot(amsr_raster_cropped)
+# wgs <- "+proj=longlat +ellps=WGS84"
+#  amsr_raster <- raster(AMSR_PATH)
+#  amsr_raster[amsr_raster > 100] <- NA_real_
+#  amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
+#  plot(amsr_raster)
+#  
+#  points <- cbind(lon = c(LON_MIN, LON_MAX), lat = c(LAT_MIN, LAT_MAX))
+#  
+#  boxext <- extent(projectExtent(raster(extent(c(LON_MIN,LON_MAX,LAT_MIN,LAT_MAX)), crs = wgs), projection(amsr_raster)))
+#  amsr_cropped=crop(amsr_raster, boxext)
+#  plot(amsr_cropped)
+#  
+#  amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
+#  plot(amsr_raster_cropped)
 ```
 
 <h4>Computing mean/sd/median of SIC raster map, and plotting</h4>
 ```{r AMSR_processing}
 
 wgs <- "+proj=longlat +ellps=WGS84"
-amsr_dir <- AMSR_FOLDER_PATH
-all_files <- list.files(amsr_dir, full.names = TRUE)
+all_files <- list.files(AMSR_FOLDER_PATH, full.names = TRUE)
 
 # on cible une date et un mois, pour ensuite en calculer la moyenne, mediane et sd
 target_year_month <- "201903"
@@ -252,6 +256,198 @@ sd_spat <- rast(sd_raster_wgs)
 plot(mean_spat, main = paste("AMSR mean -", formatted_title))
 plot(median_spat, main = paste("AMSR mediane -", formatted_title))
 plot(sd_spat, main = paste("AMSR  SD -", formatted_title))
+```
+<h4>Fusion of SIC fast ice and light profiles</h4>
+```{r Draft map SIC FI}
+# Trouver une meilleure façon d'automatiser quelle mois on affiche, si c'est avec mean sd ou median, light ou chla
+
+# month_profile = 3 #
+# profiles_per_month <- df_light %>%
+#   filter(lubridate::month(date) == month_profile) %>%
+#   mutate(
+#     month = lubridate::month(date),
+#     mld = mld_vec[1:nrow(.)],  # Assurer que mld_vec a la même longueur que le subset
+#     qd = quenchDepth_vec[1:nrow(.)]  # Pareil pour quenchDepth_vec
+#   )
+# 
+# continent_factor <- as.factor(continent[[1]])  # Convertit la couche en facteur
+# glacier_factor <- as.factor(glacier[[1]])  # Convertit la couche en facteur
+# 
+# ggplot() +
+#   geom_spatraster_contour(data = fine_topo_spat) + # bathy
+#   geom_spatraster_contour_text(data = fine_topo_spat) +
+#   
+#   geom_spatraster(data = mean_spat, alpha = 0.8) + # moyenne AMSR2 sur le mois
+#   scale_fill_viridis_c(na.value = NA) +  # NA rendus transparents
+#   
+#   new_scale_fill() +
+#   geom_spatraster(data = glacier_factor, show.legend = FALSE) +
+#   scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +  # Continent en gris, NA en blanc
+#   
+#   new_scale_fill() +
+#   geom_spatraster(data = continent_factor, show.legend = FALSE) +
+#   scale_fill_manual(values = c("1" = "slategray"), na.value = NA) +  # Continent en gris, NA en blanc
+#   
+#   geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +
+#   
+#   geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # DDU
+#   annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # DDU label
+#   
+#   xlab("Longitude") + ylab("Latitude") +
+#   theme_minimal() 
+```
+
+<h4>Fusion of SIC fast ice and light profiles (smaller crop)</h4>
+```{r SIC_fast_icePlot}
+
+# Même remarque qu'au dessus
+
+# continent_factor <- as.factor(continent[[1]])  # Convertit la couche en facteur
+# glacier_factor <- as.factor(glacier[[1]])
+# ice_shelf_factor <- as.factor(ice_shelf[[1]])
+# 
+# ggplot() +
+#   geom_spatraster_contour(data = fine_topo_spat, color = "black") + # bathy
+#   geom_spatraster_contour_text(data = fine_topo_spat)+
+#   
+#   new_scale_fill() +
+#   geom_spatraster(data = mean_spat, alpha = 0.8) + # moyenne AMSR2 sur le mois
+#   scale_fill_viridis_c(na.value = NA) +  # NA rendus transparents
+#   
+#   new_scale_fill() +
+#   geom_spatraster(data = ice_shelf_factor, show.legend = FALSE) +
+#   scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +  # ice shelf, NA en blanc
+#   
+#   
+#   new_scale_fill() +
+#   geom_spatraster(data = glacier_factor,alpha = 0.9, show.legend = FALSE) +
+#   scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +  # glacier, NA en blanc
+#   
+#   new_scale_fill() +
+#   geom_spatraster(data = continent_factor,alpha = 0.4, show.legend = FALSE) +
+#   scale_fill_manual(values = c("1" = "slategray"), na.value = NA) +  # Continent en gris, NA en transparent
+#   
+#   new_scale_fill() +
+#   geom_point(data = profiles_per_month, aes(x = lon, y = lat, color = light_surf), size = 1) +
+#   scale_color_viridis_c(limits = c(0.05, 0.1), oob = scales::squish, na.value = NA) +
+#   
+#   geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # DDU
+#   annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # DDU label
+#   
+#   xlab("Lon") + ylab("Lat") +
+#   ggtitle(paste0("Bathy, ice and light values close to DDU (", profiles_per_month$month, ")")) +
+#   theme_minimal() +
+#   coord_sf(xlim = c(139.5, 145),ylim = c(-67, -65.5))
+
+```
+
+```{r}
+
+# C'est la taille de la carte que l'on souhaite 
+ext_crop <- ext(139.5, 140.5, -66.8, -66.4)
+
+# Crop raster
+mean_spat_crop <- crop(mean_spat, ext_crop)
+fine_topo_spat_crop <- crop(fine_topo_spat, ext_crop)
+
+# Crop dataset fast-ice ice shelf continent 
+x_sub2_long_crop <- x_sub2_long_select %>%
+  dplyr::filter(x >= 139.5, x <= 140.5,
+                y >= -66.8, y <= -66.4)
+
+```
+
+<h4>Carte LIGHT avec tous les individus </h4>
+```{r}
+df_deployment_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+light_at_4m <- subset(df_deployment_data, depth == 4)
+light_at_4m <- light_at_4m[!is.na(light_at_4m$light_corrected), ]
+light_at_4m$month <- format(light_at_4m$date, "%m")
+
+plot_light <- light_at_4m[, c("date", "lon", "lat", "light_corrected", "month")]
+plot_light <- plot_light[order(plot_light$month), ]
+
+plot_light$month_label <- format(plot_light$date, "%Y - %B")
+plot_light$month_label <- factor(plot_light$month_label, 
+    levels = unique(format(seq(min(plot_light$date), max(plot_light$date), by = "month"), "%Y - %B")))
+
+# Tester la carte
+ggplot() +
+  geom_spatraster_contour(data = fine_topo_spat_crop, color = "black") +
+  #geom_spatraster_contour_text(data = fine_topo_spat_crop) +
+
+  new_scale_fill() +
+  geom_spatraster(data = mean_spat_crop, alpha = 0.7) +
+  scale_fill_cmocean(name = "ice",na.value = NA) +
+
+  new_scale_fill() +
+  geom_raster(data = x_sub2_long_crop, aes(x = x, y = y, fill = factor(value)), alpha = 0.8, show.legend = FALSE) +
+  scale_fill_manual(values = c(
+  "1" = "slategray",  # continent
+  "3" = "#A9D6E5",    # ice shelf
+  "4" = "#A9D6E5"     # glacier
+  ), na.value = NA) +
+
+  new_scale_color() +
+  geom_point(data = plot_light, aes(x = lon, y = lat, color = light_corrected), size = 1) +
+  scale_color_viridis_c(limits = c(-15, 5), oob = scales::squish, na.value = NA) +
+  
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1)+
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +
+  
+  coord_sf(xlim = c(139.5, 140.5), ylim = c(-66.8, -66.4)) +
+  facet_wrap(~month_label) +
+  theme_minimal() +
+  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "- Light values at 4 m deep by month"))
+
+```
+
+<h4>Carte CHLA avec tous les individus </h4>
+```{r}
+df_deployment_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+chla_at_4m <- subset(df_deployment_data, depth == 4)
+chla_at_4m <- chla_at_4m[!is.na(chla_at_4m$chla_corrected), ]
+chla_at_4m$month <- format(chla_at_4m$date, "%m")
+
+plot_chla <- chla_at_4m[, c("date", "lon", "lat", "chla_corrected", "month")]
+plot_chla <- plot_chla[order(plot_chla$month), ]
+
+plot_chla$month_label <- format(plot_chla$date, "%Y - %B")
+plot_chla$month_label <- factor(plot_chla$month_label, 
+    levels = unique(format(seq(min(plot_chla$date), max(plot_chla$date), by = "month"), "%Y - %B")))
+
+# Tester la carte
+ggplot() +
+  geom_spatraster_contour(data = fine_topo_spat_crop, color = "black") +
+  #geom_spatraster_contour_text(data = fine_topo_spat_crop) +
+
+  new_scale_fill() +
+  geom_spatraster(data = mean_spat_crop, alpha = 0.7) +
+  scale_fill_cmocean(name = "ice",na.value = NA) +
+
+  new_scale_fill() +
+  geom_raster(data = x_sub2_long_crop, aes(x = x, y = y, fill = factor(value)), alpha = 0.8, show.legend = FALSE) +
+  scale_fill_manual(values = c(
+  "1" = "slategray",  # continent
+  "3" = "#A9D6E5",    # ice shelf
+  "4" = "red"     # fast-ice
+  ), na.value = NA) +
+
+  new_scale_color() +
+  geom_point(data = plot_chla, aes(x = lon, y = lat, color = chla_corrected), size = 1) +
+  scale_color_viridis_c(limits = c(0, 15), oob = scales::squish, na.value = NA) +
+  
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1)+
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +
+  
+  coord_sf(xlim = c(139.5, 140.5), ylim = c(-66.8, -66.4)) +
+  facet_wrap(~month_label) +
+  #  facet_wrap(~month_label(c("", "", "")))
+  theme_minimal() +
+  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "- Chlorophyl values at 4 m deep by month"))
+
 ```
 <h4>Dataframe creation for analyzing profiles position</h4>
 ```{r}
@@ -357,7 +553,7 @@ ggplot(df_solar, aes(x = date, y = solar_angle, color = period)) +
 ggplot(df_solar, aes(x = date, y = light_surf, color = period)) +
   geom_point() +
   geom_vline(xintercept = full_moon_dates, linetype = "dashed", color = "black") +
-  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[7], "m deep)"), x = "Date", y = "ln(µmol/m²/sec)") +
+  labs(title = paste0("Light (", SURFACE_NOT_NAN[1], " to ", SURFACE_NOT_NAN[7], "m deep)"), x = "", y = "ln(µmol/m²/sec)") +
   scale_color_manual(values = c("Day" = "red", "Twilight" = "green", "Night" = "navy")) +
   theme_minimal()
 
@@ -385,124 +581,6 @@ ggplot(df_solar, aes(x = date, y = light_surf, color = lunar_phase)) +
 
 ```
 
-<h4>Fusion of SIC fast ice and light profiles</h4>
-```{r Draft map SIC FI}
-month_profile = 3 #
-# table profiles_per_month se base sur df_10m_clean
-profiles_per_month <- df_light %>%
-  filter(lubridate::month(date) == month_profile) %>%
-  mutate(
-    month = lubridate::month(date),
-    mld = mld_vec[1:nrow(.)],  # Assurer que mld_vec a la même longueur que le subset
-    qd = quenchDepth_vec[1:nrow(.)]  # Pareil pour quenchDepth_vec
-  )
-
-continent_factor <- as.factor(continent[[1]])  # Convertit la couche en facteur
-glacier_factor <- as.factor(glacier[[1]])  # Convertit la couche en facteur
-
-ggplot() +
-  geom_spatraster_contour(data = fine_topo_spat) + # bathy
-  geom_spatraster_contour_text(data = fine_topo_spat) +
-  
-  geom_spatraster(data = mean_spat, alpha = 0.8) + # moyenne AMSR2 sur le mois
-  scale_fill_viridis_c(na.value = NA) +  # NA rendus transparents
-  
-  new_scale_fill() +
-  geom_spatraster(data = glacier_factor, show.legend = FALSE) +
-  scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +  # Continent en gris, NA en blanc
-  
-  new_scale_fill() +
-  geom_spatraster(data = continent_factor, show.legend = FALSE) +
-  scale_fill_manual(values = c("1" = "slategray"), na.value = NA) +  # Continent en gris, NA en blanc
-  
-  geom_point(data = profiles_per_month, aes(x = lon, y = lat), shape = 21, color = "black", fill = "yellow", size = 1) +
-  
-  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # DDU
-  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # DDU label
-  
-  xlab("Longitude") + ylab("Latitude") +
-  theme_minimal() 
-```
-
-<h4>Fusion of SIC fast ice and light profiles (smaller crop)</h4>
-```{r SIC_fast_icePlot}
-
-continent_factor <- as.factor(continent[[1]])  # Convertit la couche en facteur
-glacier_factor <- as.factor(glacier[[1]])
-ice_shelf_factor <- as.factor(ice_shelf[[1]])
-
-ggplot() +
-  geom_spatraster_contour(data = fine_topo_spat, color = "black") + # bathy
-  geom_spatraster_contour_text(data = fine_topo_spat)+
-  
-  new_scale_fill() +
-  geom_spatraster(data = mean_spat, alpha = 0.8) + # moyenne AMSR2 sur le mois
-  scale_fill_viridis_c(na.value = NA) +  # NA rendus transparents
-  
-  new_scale_fill() +
-  geom_spatraster(data = ice_shelf_factor, show.legend = FALSE) +
-  scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +  # ice shelf, NA en blanc
-  
-  
-  new_scale_fill() +
-  geom_spatraster(data = glacier_factor,alpha = 0.9, show.legend = FALSE) +
-  scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +  # glacier, NA en blanc
-  
-  new_scale_fill() +
-  geom_spatraster(data = continent_factor,alpha = 0.4, show.legend = FALSE) +
-  scale_fill_manual(values = c("1" = "slategray"), na.value = NA) +  # Continent en gris, NA en transparent
-  
-  new_scale_fill() +
-  geom_point(data = profiles_per_month, aes(x = lon, y = lat, color = light_surf), size = 1) +
-  scale_color_viridis_c(limits = c(0.05, 0.1), oob = scales::squish, na.value = NA) +
-  
-  geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +  # DDU
-  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +  # DDU label
-  
-  xlab("Lon") + ylab("Lat") +
-  ggtitle("Bathy, ice and light values close to DDU") +
-  theme_minimal() +
-  coord_sf(xlim = c(139.5, 140.5),ylim = c(-66.8, -66.5))
-
-```
-<h4>Carte avec tous les individus</h4>
-```{r}
-
-# ggplot() +
-#   geom_spatraster_contour(data = fine_topo_spat, color = "black") +
-#   geom_spatraster_contour_text(data = fine_topo_spat) +
-#   
-#   new_scale_fill() +
-#   geom_spatraster(data = mean_spat, alpha = 0.8) +
-#   scale_fill_viridis_c(na.value = NA) +
-#   
-#   new_scale_fill() +
-#   geom_spatraster(data = ice_shelf_factor, show.legend = FALSE) +
-#   scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +
-#   
-#   new_scale_fill() +
-#   geom_spatraster(data = glacier_factor, alpha = 0.9, show.legend = FALSE) +
-#   scale_fill_manual(values = c("1" = "#A9D6E5"), na.value = NA) +
-#   
-#   new_scale_fill() +
-#   geom_spatraster(data = continent_factor, alpha = 0.4, show.legend = FALSE) +
-#   scale_fill_manual(values = c("1" = "slategray"), na.value = NA) +
-#   
-#   new_scale_color() +
-#   geom_point(data = profiles_per_month, aes(x = lon, y = lat, color = light_surf), size = 1) +
-#   scale_color_viridis_c(limits = c(0.05, 0.1), oob = scales::squish, na.value = NA) +
-#   
-#   geom_point(aes(x = DDU_loc$lon, y = DDU_loc$lat), color = "red", shape = 4, size = 3, stroke = 1) +
-#   annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +
-#   
-#   xlab("Lon") + ylab("Lat") +
-#   ggtitle("Bathy, ice and light values close to DDU") +
-#   theme_minimal() +
-#   coord_sf(xlim = c(139.5, 140.5), ylim = c(-66.8, -66.5)) +
-#   facet_wrap(~month)
-
-```
-
 <h4>Geographical Classification of Profiles Relative to the DDU Station</h4>
 ```{r Light_profile_NSEW}
 df_solar$lon <- lon
@@ -519,6 +597,7 @@ df_solar <- df_solar %>%
     lon > lon_center & lat < lat_center ~ "Sud-Est"
   ))
 
+# A revoir (on a supprimé ice_shelf_factor)
 ggplot() +
   # bathy et continent
   geom_spatraster_contour(data = fine_topo_spat) +  # lignes de contour

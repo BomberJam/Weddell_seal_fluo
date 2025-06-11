@@ -75,11 +75,6 @@ deployment_profiles <- deployment_profiles %>%
 nb_individus <- length(unique(deployment_profiles$seal_id))
 cat("Number of individuals :", nb_individus, "\n\n")
 
-# Nombre de profils par individu
-cat("Profiles for each individual :\n")
-profils_par_individu <- table(deployment_profiles$seal_id)
-print(profils_par_individu)
-
 ```
 
 <h2>NA and not-NA profiles<h2>
@@ -207,7 +202,7 @@ light_profile_counts <- deployment_profiles %>%
   summarise(n_profiles = n(), .groups = "drop")
 
 ggplot(light_profile_counts, aes(x = seal_id, y = n_profiles, fill = deployment)) +
-  geom_col() +
+  geom_col(fill = "goldenrod") +
   theme_minimal() +
   labs(
     title = "Number of light profiles by seal",
@@ -225,7 +220,7 @@ chla_profile_counts <- deployment_profiles %>%
   summarise(n_profiles = n(), .groups = "drop")
 
 ggplot(chla_profile_counts, aes(x = seal_id, y = n_profiles, fill = deployment)) +
-  geom_col() +
+  geom_col(fill = "darkgreen") +
   theme_minimal() +
   labs(
     title = "Number of chl-a profiles by seal",
@@ -272,7 +267,7 @@ ggplot() +
   geom_point(data = last_light, aes(x = date, y = depth), color = "red", size = 0.5) +
   geom_point(data = last_chla, aes(x = date, y = depth), color = "green", size = 0.5) +
   scale_y_reverse() +
-  scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%b") +
+  scale_x_datetime(date_labels = "%b %Y") +
   labs(title = paste0("Maximum depth per profile - ", SEAL_NAME), x = "", y = "Depth (m)") +
   theme_minimal()
 
@@ -368,8 +363,10 @@ depth <- depth[valid]
 time <- data_one_seal$date[valid]
 
 # intervalles de profondeur (mètres)
-depth_bins <- list("0-100" = c(0, 20),
-                   "100-300" = c(20, 50))
+depth_bins <- list("0-50" = c(0, 50),
+                   "50-100" = c(50, 100),
+                   "100-150" = c(100, 150),
+                   "150-200" = c(150,200))
 
 time_numeric <- as.numeric(difftime(time, min(time, na.rm = TRUE), units = "days"))
 n_ticks <- 5
@@ -420,8 +417,12 @@ library(dplyr)
 library(tidyr)
 library(patchwork)
 
-# Ajouter densité
+# Ajout densité
 data_one_seal$sigma0 <- gsw_sigma0(data_one_seal$salinity, gsw_CT_from_t(data_one_seal$salinity, data_one_seal$temperature, 0))
+
+# Pour voir l'association Light - Chla
+# data_one_seal <- data_one_seal %>%
+#   filter(!is.na(light_raw) & !is.na(chla_raw))
 
 # Format long
 data_long <- data_one_seal %>%
@@ -432,7 +433,8 @@ data_long <- data_one_seal %>%
                            salinity = "sal",
                            sigma0 = "dens",
                            light_raw = "light",
-                           chla_raw = "chla"))
+                           chla_raw = "chla")) %>%
+  mutate(variable = factor(variable, levels = c("light", "chla", "temp", "sal", "dens")))
 
 # plot
 plots <- data_long %>%
@@ -441,8 +443,9 @@ plots <- data_long %>%
     ggplot(df, aes(x = date, y = depth, fill = value)) +
       geom_tile() +
       scale_y_reverse(limits = c(300, 0)) +
-      scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"), name = unique(df$variable), na.value = NA
-)+
+      scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%m-%Y") +
+      scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"), 
+                           name = unique(df$variable), na.value = NA)+
       guides(fill = guide_colorbar(barwidth = 0.5, barheight = 3)) +
       labs(title = paste0(unique(df$variable)," - ",SEAL_NAME), x = "", y = "Depth (m)") +
       theme_minimal(base_size = 9)
