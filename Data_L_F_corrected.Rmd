@@ -53,7 +53,7 @@ lon   <- ncvar_get(nc_data, "LONGITUDE")
 lat   <- ncvar_get(nc_data, "LATITUDE")
 raw_chla  <- ncvar_get(nc_data, "CHLA")
 raw_light <- ncvar_get(nc_data, "LIGHT")
-temp  <- ncvar_get(nc_data, "TEMP_ADJUSTED")
+temperature  <- ncvar_get(nc_data, "TEMP_ADJUSTED")
 sal   <- ncvar_get(nc_data, "PSAL_ADJUSTED")
 pres  <- ncvar_get(nc_data, "PRES_ADJUSTED")
 juld  <- ncvar_get(nc_data, "JULD")
@@ -93,15 +93,15 @@ df_interp <- as.data.frame(interp_results)
 
 ```{r}
 
-# df_original <- data.frame(lon = lon, lat = lat)
-# 
-# ggplot() +
-#   geom_point(data = df_original, aes(x = lon, y = lat, color = "Original"), alpha = 0.4, size = 2) +
-#   geom_point(data = df_interp, aes(x = interpLon_corr, y = interpLat_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
-#   scale_color_manual(name = "Type de données", values = c("Original" = "blue", "Interpolated" = "red")) +
-#   labs(title = "Corrected Lat/Lon", x = "Longitude", y = "Latitude") +
-#   # ylim(-70, -63) + # même axe que dans le code de Loïc (pour vérifier) 
-#   theme_minimal()
+df_original <- data.frame(lon = lon, lat = lat)
+
+ggplot() +
+  geom_point(data = df_original, aes(x = lon, y = lat, color = "Original"), alpha = 0.4, size = 2) +
+  geom_point(data = df_interp, aes(x = interpLon_corr, y = interpLat_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
+  scale_color_manual(name = "Type de données", values = c("Original" = "blue", "Interpolated" = "red")) +
+  labs(title = "Corrected Lat/Lon", x = "Longitude", y = "Latitude") +
+  # ylim(-70, -63) + # même axe que dans le code de Loïc (pour vérifier)
+  theme_minimal()
 ```
 
 ```{r}
@@ -113,7 +113,7 @@ lat <- df_interp$interpLat_corr
 ```{r MLD}
 
 # Fonction pour faire comme find(..., 1, 'first') de MATLAB
-first_valid_index <- function(condition) 
+first_valid_index <- function(condition)
 {
   idx <- which(condition)
   if (length(idx) > 0) return(idx[1]) else return(NA)
@@ -122,7 +122,6 @@ first_valid_index <- function(condition)
 n_profiles <- ncol(sal)
 n_levels <- nrow(sal)
 
-sigma0_mat <- matrix(NA, nrow = n_levels, ncol = n_profiles)
 mld_vec <- rep(NA, n_profiles)
 densThreshold <- 0.03
 refDepth <- 10
@@ -131,9 +130,9 @@ minProfileStartDepth <- 20
 # Trouver les profils valides selon leur première profondeur
 profileStartDepth <- rep(NA, n_profiles)
 for (i in 1:n_profiles) {
-  firstGood <- first_valid_index(!is.na(temp[, i]) & !is.na(pres[, i]) & !is.na(sal[, i]))
+  firstGood <- first_valid_index(!is.na(temperature[, i]))
   if (!is.na(firstGood) && !is.na(pres[firstGood, i])) {
-    profileStartDepth[i] <- pres[firstGood, i]
+    profileStartDepth[i] <- pres[firstGood]
   }
 }
 validProfiles <- which(profileStartDepth <= minProfileStartDepth)
@@ -143,21 +142,20 @@ for (i in validProfiles) {
   S <- sal[, i]
   T <- temp[, i]
   P <- pres[, i]
-  
+
   good <- !is.na(S) & !is.na(T) & !is.na(P)
   if (sum(good) == 0) next  # ignorer les profils entièrement vides
-  
+
   # Calcul de la densité potentielle
   ctd <- as.ctd(salinity = S[good], temperature = T[good], pressure = P[good])
   sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
 
   full_sigma0 <- rep(NA, n_levels)
   full_sigma0[which(good)] <- sigma0
-  sigma0_mat[, i] <- full_sigma0
 
   # Trouve l'indice de référence (premier >= 10 m)
   refIdx <- first_valid_index(ctd@data$pressure >= refDepth)
-  
+
   if (!is.na(refIdx) && !is.na(sigma0[refIdx])) {
     refSigma0 <- sigma0[refIdx]
     # Différence de densité sur tous les niveaux valides
@@ -182,16 +180,26 @@ df_mld <- data.frame(
 
 ```{r}
 
-# ggplot(df_mld, aes(x = profile, y = value)) +
-#   geom_point(shape = 4, color = "blue") +
-#   geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "red", linewidth = 0.25, se = FALSE) +
-#   scale_y_reverse() +
-#   labs(x = "Profile", y = "Depth (m)", title = paste0("Mixed Layer Depth (MLD) - ",SEAL_NAME)) +
-#   theme_minimal()
+ggplot(df_mld, aes(x = profile, y = value)) +
+  geom_point(shape = 4, color = "blue") +
+  geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "red", linewidth = 0.25, se = FALSE) +
+  scale_y_reverse() +
+  labs(x = "Profile", y = "Depth (m)", title = paste0("Mixed Layer Depth (MLD) - ",SEAL_NAME)) +
+  theme_minimal()
 
 ```
 
 <h2>LIGHT</h2>
+<h4>LIGHT : Estimation of NA columns</h4>
+```{r NaN_Chla}
+col_na_only <- apply(raw_light, 2, function(col) all(is.na(col)))
+which(col_na_only)
+
+light_non_nan <- raw_light[, !col_na_only]
+
+cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
+```
+
 <h4>Computing Dark value for light profile</h4>
 ```{r DarkValue}
 
@@ -357,25 +365,41 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 
 ```
 
+```{r}
+
+df_quench <- data.frame(
+  profile = seq_along(quenchDepth_vec),
+  value = quenchDepth_vec
+)
+
+ggplot(df_quench, aes(x = profile, y = value)) +
+  geom_point(shape = 4, color = "darkgreen") +
+  geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "black", linewidth = 0.25, se = FALSE) +
+  scale_y_reverse() +
+  labs(x = "Profile", y = "Depth (m)", title = paste0("Quenching Depth - ", SEAL_NAME)) +
+  theme_minimal()
+
+```
+
 <h4>Plotting one light profile, before and after dark value correction</h4>
 ```{r LightProfilePlot}
 # Plot
 
-# valid_indices <- !is.na(light_non_log[, idprofile]) | !is.na(light_corrected_non_log[, idprofile])
-# xlim_vals <- range(c(light_non_log[, idprofile], light_corrected_non_log[, idprofile]), na.rm = TRUE)
-# ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
-# 
-# plot(light_non_log[, idprofile], pres_vec, type = "l", col = "blue",
-#      ylim = rev(ylim_vals), xlim = c(xlim_vals),
-#      xlab = "Light ln(µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",idprofile," - Original and Corrected\n", SEAL_NAME))
-# 
-# lines(light_corrected_non_log[, idprofile], pres_vec, col = "red")
-# legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
-# 
-# abline(h = quenchDepth_vec[idprofile], col = "cyan", lty = 2)
-# abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
-# 
-# legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
+valid_indices <- !is.na(light_non_log[, idprofile]) | !is.na(light_corrected_non_log[, idprofile])
+xlim_vals <- range(c(light_non_log[, idprofile], light_corrected_non_log[, idprofile]), na.rm = TRUE)
+ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+
+plot(light_non_log[, idprofile], pres_vec, type = "l", col = "blue",
+     ylim = rev(ylim_vals), xlim = c(xlim_vals),
+     xlab = "Light ln(µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",idprofile," - Original and Corrected\n", SEAL_NAME))
+
+lines(light_corrected_non_log[, idprofile], pres_vec, col = "red")
+legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
+
+abline(h = quenchDepth_vec[idprofile], col = "cyan", lty = 2)
+abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
+
+legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
 
 ```
 
@@ -383,24 +407,24 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 ```{r PlotAllProfiles-original&Corrected}
 # Plot
 
-# matplot(raw_light[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
-#         type = "l",
-#         ylim = rev(c(0, MAX_CHLA_DEPTH)),
-#         lty = 1,
-#         xlab = "Light ln(µmol/m²/s)",
-#         ylab = "Depth (m)",
-#         main = paste0("Light profiles : ", SEAL_NAME))
-# grid()
-# 
-# matplot(light_corrected_log[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
-#         type = "l",
-#         xlim = c(-10,10),
-#         ylim = rev(c(0, MAX_CHLA_DEPTH)),
-#         lty = 1,
-#         xlab = "Light ln(µmol/m²/s)",
-#         ylab = "Depth (m)",
-#         main = paste0("Light profiles corrected : ", SEAL_NAME))
-# grid()
+matplot(raw_light[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
+        type = "l",
+        ylim = rev(c(0, MAX_CHLA_DEPTH)),
+        lty = 1,
+        xlab = "Light ln(µmol/m²/s)",
+        ylab = "Depth (m)",
+        main = paste0("Light profiles : ", SEAL_NAME))
+grid()
+
+matplot(light_corrected_log[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
+        type = "l",
+        xlim = c(-10,10),
+        ylim = rev(c(0, MAX_CHLA_DEPTH)),
+        lty = 1,
+        xlab = "Light ln(µmol/m²/s)",
+        ylab = "Depth (m)",
+        main = paste0("Light profiles corrected : ", SEAL_NAME))
+grid()
 
 ```
 
@@ -408,23 +432,23 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 ```{r Total-Light}
 # Plot
 
-# light_subset <- light_corrected_non_log [1:MAX_CHLA_DEPTH, !col_na_only]
-# 
-# total_light <- colSums(light_subset, na.rm = TRUE)
-# 
-# plot(
-#   total_light,
-#   type = "b",                     
-#   pch = 18,                        
-#   col = "blue",
-#   xlab = "",
-#   ylab = "Total lumière (µmol/m²/s)",
-#   main = paste0("Lumière totale par profile : ", SEAL_NAME),
-#   xaxt = "n"  # Supprime l'axe x par défaut
-# )
-# 
-# # Ajout d'un axe x avec les dates
-# axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2, cex.axis = 0.7)
+light_subset <- light_corrected_non_log [1:MAX_CHLA_DEPTH, !col_na_only]
+
+total_light <- colSums(light_subset, na.rm = TRUE)
+
+plot(
+  total_light,
+  type = "b",
+  pch = 18,
+  col = "blue",
+  xlab = "",
+  ylab = "Total lumière (µmol/m²/s)",
+  main = paste0("Lumière totale par profile : ", SEAL_NAME),
+  xaxt = "n"  # Supprime l'axe x par défaut
+)
+
+# Ajout d'un axe x avec les dates
+axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2, cex.axis = 0.7)
 
 ```
 
@@ -432,8 +456,8 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 ```{r SaveAndClassifyLightProfiles}
 
 # Dossiers de sortie
-dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME)
-dir.create(dir_plot, showWarnings = FALSE)
+dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME, "light")
+dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
 
 nlight = ncol(light_corrected_non_log)
 
@@ -489,103 +513,70 @@ cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 
 <h4>Dark-value correction for Chl-a profiles</h4>
 ```{r DarkValue_chla}
-correct_chla_profile_matlab <- function(col_data, pres_vec,
-                                        darkDepthDelta_temp = 10,
-                                        delta_for_cstCHLA = 0.01)
-{
-  max_depth <- nrow(col_data)  # utile pour construire les matrices
-  n_prof <- ncol(col_data)
+# Variables d'entrée
+max_depth <- nrow(raw_chla)
+PDARK_temp <- MAX_CHLA_DEPTH + 1
+delta_for_cstCHLA <- 0.01
+darkDepthDelta_temp <- 10
+maxCHLA_depth <- 175
+# Extraction du sous-ensemble profond de la matrice CHLA
+chlaDeep_temp <- raw_chla[(MAX_CHLA_DEPTH - (darkDepthDelta_temp - 1)) : MAX_CHLA_DEPTH, ]
+# Médiane par colonne (profil)
+chlaProfDarkVal_temp <- apply(chlaDeep_temp, 2, median, na.rm = TRUE)
+# Remplir les NA avec la valeur la plus proche (cette ligne n'est pas égale à celle de matlab, à surveiller)
+chlaProfDarkVal_temp <- na.approx(chlaProfDarkVal_temp, method = "constant", rule = 2)
+chlaProfDarkVal_temp <- round(chlaProfDarkVal_temp, 4) 
+# Générer l'offset en répétant la valeur médiane max_depth fois
+chlaOffset_temp <- matrix(rep(chlaProfDarkVal_temp, times = max_depth), nrow = max_depth, byrow = TRUE)
 
-  # Vérifier que le profil atteint la profondeur désirée
-  if (MAX_CHLA_DEPTH > max_depth) {
-    stop("Le profil ne descend pas jusqu'à MAX_CHLA_DEPTH.")
-  }
+darkValProfile <- chlaProfDarkVal_temp
 
-  # Indices de la tranche profonde à analyser
-  deep_indices <- (MAX_CHLA_DEPTH - (darkDepthDelta_temp - 1)) : MAX_CHLA_DEPTH
+CHLA_nadRegDk <- raw_chla
+CHLA_nadRegDk <- CHLA_nadRegDk - chlaOffset_temp
+CHLA_nadRegDk[CHLA_nadRegDk < 0] <- 0
+CHLA_nadRegDk <- round(CHLA_nadRegDk, 4)
+
+chla_non_nan <- CHLA_nadRegDk [, !col_na_only]
+n_profile <- ncol(chla_non_nan)
+ii <- 1
+# for (ii in 1:n_profile) {
+  profile_data <- chla_non_nan[, ii]
+  firstNonNan_temp <- which(!is.na(profile_data))[1]
+  lastNonNan_temp <- tail(which(!is.na(profile_data)), 1)
   
-  # Initialiser la matrice des valeurs CHLA corrigées
-  CHLA_nadRegDk <- matrix(NA, nrow = max_depth, ncol = n_prof)
-  darkDepth_vec <- rep(NA, n_prof)
-
-  for (ii in 1:n_prof) {
-    profile <- col_data[, ii]
-
-    if (all(is.na(profile))) {
-      next  # Profil entièrement vide
-    }
-
-    # Calcul de l'offset à partir des profondeurs profondes
-    chla_deep <- profile[deep_indices]
-    dark_val <- median(chla_deep, na.rm = TRUE)
-
-    if (is.na(dark_val)) {
-      dark_val <- 0  # Valeur de secours si tout est NA
-    }
-
-    profile_corrected <- profile - dark_val
-    profile_corrected[profile_corrected < 0] <- 0  # Forcer à 0 les négatifs
-
-    CHLA_nadRegDk[, ii] <- profile_corrected
-
-    # Détection de plateau constant profond (PDARK: où la chlorophylle est constante)
-    idx_non_na <- which(!is.na(profile_corrected))
-    if (length(idx_non_na) < 2) {
-      darkDepth_vec[ii] <- NA
-      next
-    }
-
-    first_idx <- idx_non_na[1]
-    last_idx <- tail(idx_non_na, 1)
-
-    PDARK_temp <- MAX_CHLA_DEPTH + 1
-
-    for (jj in first_idx:(last_idx - 1)) {
-      # Calcul de l'amplitude maximale de la CHLA du point jj jusqu'à la fin du profil
-      amplitude <- suppressWarnings(max(profile_corrected[jj:last_idx], na.rm = TRUE))
-      # Si l'amplitude est très faible (donc profil plat) ou non définie (NA), on considère que la zone sombre commence ici
-      if (is.na(amplitude) || amplitude <= delta_for_cstCHLA) {
-        idx_dark_temp <- jj + 1
-        # Mise à zéro de toutes les valeurs CHLA à partir de cette profondeur (zone sombre détectée)
-        profile_corrected[idx_dark_temp:last_idx] <- 0
-        PDARK_temp <- pres_vec[idx_dark_temp]
+  if((lastNonNan_temp - firstNonNan_temp + 1) < 2) {
+      PDARK_temp <- NaN
+  } else {
+    for(jj in firstNonNan_temp:(lastNonNan_temp-1)) {
+      amplitude_temp <- max(CHLA_nadRegDk[jj:lastNonNan_temp, ii], na.rm = TRUE)
+      if(amplitude_temp <= delta_for_cstCHLA) {
         break
       }
     }
-    CHLA_nadRegDk[, ii] <- profile_corrected
-    darkDepth_vec[ii] <- PDARK_temp
+    if(jj != lastNonNan_temp -1) {
+      ind_dark_temp <- jj + 1
+      PDARK_temp = pres_vec[ind_dark_temp]
+      CHLA_nadRegDk[ind_dark_temp:lastNonNan_temp,ii] <- 0
+    }
   }
+# }
 
-  return(list(
-    corrected = CHLA_nadRegDk,
-    darkDepth = darkDepth_vec
-  ))
-}
-
-
-result_list <- lapply(seq_len(ncol(raw_chla)), function(i) {
-  correct_chla_profile_matlab(raw_chla[, i, drop = FALSE], pres_vec)
-})
+# Résultats finaux dans :
+chla_corrected_dk <- CHLA_nadRegDk
 
 ```
 
 <h4>Plotting dark value correction for Chl-a</h4>
 ```{r plot_dk_chla}
-# Extraire les résultats
-chla_corrected_dk <- sapply(result_list, function(x) x$corrected)   # matrice de profils corrigés
-dark_vals <- sapply(result_list, function(x) x$dark_val)         # vecteur
-PDARK_vals <- sapply(result_list, function(x) x$PDARK_temp)      # vecteur
 
-# sauvegardés dans une structure de type data.frame
-chlaData <- data.frame(
-  darkValProfile = dark_vals,
-  darkDepth = PDARK_vals
-)
+valid_indices <- !is.na(raw_chla[, idprofile]) | !is.na(chla_corrected_dk[, idprofile])
+xlim_vals <- range(c(raw_chla[, idprofile], chla_corrected_dk[, idprofile]), na.rm = TRUE)
+ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
 
 # Plot only one of the 150
 plot(raw_chla[1:MAX_CHLA_DEPTH, idprofile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
-     ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
-     xlim = range(c(0,2)),
+     ylim = rev(ylim_vals),
+     xlim = xlim_vals,
      xlab = "Chl-a (mg/m³)", ylab = "Depth (m)", main = paste("Chl-a profile (DK)", idprofile, "-", SEAL_NAME))
 
 lines(chla_corrected_dk[1:MAX_CHLA_DEPTH, idprofile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
@@ -596,6 +587,52 @@ legend("bottomright", legend = c("Original", "Corrected"), col = c("blue", "red"
 abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
 
 legend("bottomleft", legend = "MLD", col =  "purple", lty = 1, bty="n")
+```
+```{r}
+
+# Dossiers de sortie
+dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla")
+dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
+
+nchla = ncol(chla_corrected_dk)
+
+for (i in 1:nchla) {
+  filename <- paste0(dir_plot, "/", SEAL_NAME, "_DarkValue", i, ".png")
+  
+  png(filename, width = 800, height = 600)
+  
+  plot(raw_chla[1:MAX_CHLA_DEPTH, i],
+       pres_vec[1:MAX_CHLA_DEPTH],
+       type = "l",
+       col = "blue",
+       ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH])),
+       xlim = c(0, 3e-4),
+       xlab = "Chl-a (mg/m³))",
+       ylab = "Depth (m)",
+       main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME))
+  
+  lines(chla_corrected_dk[1:MAX_CHLA_DEPTH, i],
+        pres_vec[1:MAX_CHLA_DEPTH],
+        col = "red")
+  
+  legend("bottomright",
+         legend = c("Original", "Corrected"),
+         col = c("blue", "red"),
+         lty = 1,
+         bty = "n")
+  
+  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+  abline(h = df_mld$value[i], col = "purple", lty = 2)
+  
+  legend("bottomleft",
+         legend = c("Quenching Depth", "MLD"),
+         col = c("cyan", "purple"),
+         lty = 2,
+         bty = "n")
+  
+  dev.off()
+}
+
 ```
 
 <h4>Plotting all dark value correction profiles for Chl-a, before and after correction</h4>
@@ -622,62 +659,104 @@ grid()
 <h4>Non Photochemical Quenching correction for Chl-a profiles (as dark-value correction works only for some profiles, need to verify this code once DK is fixed)</h4>
 ```{r NPQ_correction}
 
-apply_npq_correction <- function(chla_dk, pres_vec, mld_vec, quenchDepth_vec, MAX_CHLA_DEPTH) {
-  nprofiles <- ncol(chla_dk)
-  chla_corrected_q <- chla_dk  # initialiser avec les valeurs originales
-  npqCorrDepth <- rep(NA_real_, nprofiles)  # index (non profondeur) de correction
-  
-  # Profils valides : chl-a non vide + quenching connu
-  idx_chlaNonNan <- apply(!is.na(chla_dk), 2, any)
-  idx_lightNonNan <- !is.na(quenchDepth_vec)
-  valid_profiles <- which(idx_chlaNonNan & idx_lightNonNan)
-  
-  for (nprofile in valid_profiles) {
-    profile_chla <- chla_dk[1:MAX_CHLA_DEPTH, nprofile]
-    MLD <- mld_vec[nprofile]
-    quenchDepth <- quenchDepth_vec[nprofile]
-    
-    if (is.na(MLD) || is.na(quenchDepth)) next
-    
-    # Déterminer la profondeur limite de correction
-    depthLimit <- min(MLD, quenchDepth, na.rm = TRUE)
-    indexDepthLimit <- which.min(abs(pres_vec[1:MAX_CHLA_DEPTH] - depthLimit))
-    
-    # Chercher la valeur max de fluorescence dans cette couche
-    surface_chla <- profile_chla[1:indexDepthLimit]
-    if (all(is.na(surface_chla))) next
-    
-    chlMaxValue <- max(surface_chla, na.rm = TRUE)
-    indexMaxFluorescence <- which.max(surface_chla)
-    
-    # Appliquer la correction NPQ jusqu'à (et y compris) l'index du maximum
-    profile_chla[1:indexMaxFluorescence] <- chlMaxValue
-    
-    # Stocker les résultats
-    chla_corrected_q[1:MAX_CHLA_DEPTH, nprofile] <- profile_chla
-    npqCorrDepth[nprofile] <- indexMaxFluorescence  # Optionnel : pres_vec[...] si vous préférez la profondeur réelle
+# apply_npq_correction <- function(chla_dk, pres_vec, mld_vec, quenchDepth_vec, MAX_CHLA_DEPTH) {
+#   nprofiles <- ncol(chla_dk)
+#   chla_corrected_q <- chla_dk  # initialiser avec les valeurs originales
+#   npqCorrDepth <- rep(NA_real_, nprofiles)  # index (non profondeur) de correction
+#   
+#   # Profils valides : chl-a non vide + quenching connu
+#   idx_chlaNonNan <- apply(!is.na(chla_dk), 2, any)
+#   idx_lightNonNan <- !is.na(quenchDepth_vec)
+#   valid_profiles <- which(idx_chlaNonNan & idx_lightNonNan)
+#   
+#   for (nprofile in valid_profiles) {
+#     profile_chla <- chla_dk[1:MAX_CHLA_DEPTH, nprofile]
+#     MLD <- mld_vec[nprofile]
+#     quenchDepth <- quenchDepth_vec[nprofile]
+#     
+#     if (is.na(MLD) || is.na(quenchDepth)) next
+#     
+#     # Déterminer la profondeur limite de correction
+#     depthLimit <- min(MLD, quenchDepth, na.rm = TRUE)
+#     indexDepthLimit <- which.min(abs(pres_vec[1:MAX_CHLA_DEPTH] - depthLimit))
+#     
+#     # Chercher la valeur max de fluorescence dans cette couche
+#     surface_chla <- profile_chla[1:indexDepthLimit]
+#     if (all(is.na(surface_chla))) next
+#     
+#     chlMaxValue <- max(surface_chla, na.rm = TRUE)
+#     indexMaxFluorescence <- which.max(surface_chla)
+#     
+#     # Appliquer la correction NPQ jusqu'à (et y compris) l'index du maximum
+#     profile_chla[1:indexMaxFluorescence] <- chlMaxValue
+#     
+#     # Stocker les résultats
+#     chla_corrected_q[1:MAX_CHLA_DEPTH, nprofile] <- profile_chla
+#     npqCorrDepth[nprofile] <- indexMaxFluorescence  # Optionnel : pres_vec[...] si vous préférez la profondeur réelle
+#   }
+#   
+#   return(list(chla_corrected_q = chla_corrected_q,
+#               npqCorrDepth = npqCorrDepth))
+# }
+# 
+# 
+# result <- apply_npq_correction(chla_corrected_dk, pres_vec, mld_vec, quenchDepth_vec, MAX_CHLA_DEPTH)
+# 
+# chla_corrected_q <- result$chla_corrected_q
+# npqCorrDepth <- result$npqCorrDepth
+##################
+
+# Initialisation de la matrice corrigée
+CHLA_nadRegDkNpq <- chla_corrected_dk
+
+# Calcul de la profondeur de correction : min(MLD, quenchDepth)
+CORRDEPTH_temp <- ifelse(is.na(mld_vec), quenchDepth_vec,
+                         ifelse(is.na(quenchDepth_vec), mld_vec,
+                                pmin(mld_vec, quenchDepth_vec)))
+
+# Profils valides pour la CHLA : au moins une valeur non-NA par colonne
+idx_chlaNonNan <- colSums(!is.na(raw_chla)) > 0
+# Profils valides pour la lumière 
+idx_lightNonNan <- colSums(!is.na(raw_light)) > 0
+
+# Boucle sur les indices valides de CHLA et lumière non-NaN
+for (ii in which(idx_chlaNonNan & idx_lightNonNan)) {
+
+  # Trouver le premier indice où la pression dépasse la profondeur de correction
+  indC_temp <- which(pres_vec >= CORRDEPTH_temp[ii])[1]
+
+  if (!is.na(indC_temp)) {
+    # Chercher la valeur maximale de CHLA dans l'intervalle surface -> CORRDEPTH
+    max_val <- max(chla_corrected_dk[1:indC_temp, ii], na.rm = TRUE)
+    indX12_temp <- which.max(chla_corrected_dk[1:indC_temp, ii])
+
+    # Corriger la CHLA : écraser les valeurs jusqu'à indX12 avec la valeur max
+    CHLA_nadRegDkNpq[1:indX12_temp, ii] <- max_val
+
+    # Mettre à jour la profondeur de correction si un indice a été trouvé
+    if (!is.na(indX12_temp)) {
+      CORRDEPTH_temp[ii_temp] <- indX12_temp
+    }
   }
-  
-  return(list(chla_corrected_q = chla_corrected_q,
-              npqCorrDepth = npqCorrDepth))
 }
 
-
-result <- apply_npq_correction(chla_corrected_dk, pres_vec, mld_vec, quenchDepth_vec, MAX_CHLA_DEPTH)
-
-chla_corrected_q <- result$chla_corrected_q
-npqCorrDepth <- result$npqCorrDepth
+chla_corrected_q <- CHLA_nadRegDkNpq
 
 ```
 
 <h4>Plotting NPQ correction for Chl-a</h4>
 ```{r NPQ_plot}
+idprofile <- 56
+valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(chla_corrected_q[, idprofile])
+xlim_vals <- range(c(chla_corrected_dk[, idprofile], chla_corrected_q[, idprofile]), na.rm = TRUE)
+ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+
 plot(
   chla_corrected_dk[1:MAX_CHLA_DEPTH, idprofile],
   pres_vec[1:MAX_CHLA_DEPTH],
   type = "l", col = "blue",
-  ylim = rev(range(pres_vec[1:MAX_CHLA_DEPTH], na.rm = TRUE)),
-  xlim = range(c(0,2)),#range(c(chla[1:MAX_CHLA_DEPTH, nprofile], chla_corrected[1:MAX_CHLA_DEPTH, nprofile]), na.rm = TRUE),
+  ylim = rev(ylim_vals),
+  xlim = xlim_vals,
   xlab = "Chl-a", ylab = "Depth",
   main = paste("Profil", idprofile, "-", SEAL_NAME)
 )
@@ -784,7 +863,7 @@ fig <- fig %>% add_trace(
   y = df_L_F_corrected$depth,
   name = "Chl-a",
   mode = "lines",
-  line = list(color = "green"),
+  line = list(color = "darkgreen"),
   type = "scatter"
 )
 
@@ -794,7 +873,7 @@ fig <- fig %>% add_trace(
   y = df_L_F_corrected$depth,
   name = "Light",
   mode = "lines",
-  line = list(color = "orange"),
+  line = list(color = "goldenrod"),
   type = "scatter",
   xaxis = "x2"
 )
@@ -803,17 +882,17 @@ fig <- fig %>% add_trace(
 x2 <- list(
   overlaying = "x",
   side = "top",
-  title = "Lumière",
-  tickfont = list(color = "orange"),
-  titlefont = list(color = "orange")
+  title = "Light",
+  tickfont = list(color = "goldenrod"),
+  titlefont = list(color = "goldenrod")
 )
 
 # Mise en forme générale
 fig <- fig %>% layout(
   title = "",
-  xaxis = list(title = "Chlorophylle", titlefont = list(color = "green"), tickfont = list(color = "green")),
+  xaxis = list(title = "Chla", titlefont = list(color = "darkgreen"), tickfont = list(color = "darkgreen")),
   xaxis2 = x2,
-  yaxis = list(title = "Profondeur (m)", autorange = "reversed"),  # profondeur vers le bas
+  yaxis = list(title = "Depth (m)", autorange = "reversed"),  # profondeur vers le bas
   legend = list(x = 0.1, y = 1))
 
 fig
@@ -827,7 +906,7 @@ fig
 df_raw <- data.frame(
   depth = pres_vec,
   Light = light_corrected_log[, idprofile],
-  Temperature = temp[, idprofile],
+  Temperature = temperature[, idprofile],
   Salinity = sal[, idprofile],
   CHLA = chla_corrected_q[, idprofile]
 )
@@ -871,7 +950,7 @@ df_light_raw       <- as.data.frame(t(raw_light[1:MAX_DEPTH,])) # n_profils x 25
 df_light_corrected <- as.data.frame(t(light_corrected_log[1:MAX_DEPTH,]))
 df_chla_raw        <- as.data.frame(t(raw_chla[1:MAX_DEPTH,]))
 df_chla_corrected  <- as.data.frame(t(chla_corrected_q[1:MAX_DEPTH,]))
-df_temperature     <- as.data.frame(t(temp[1:MAX_DEPTH,]))
+df_temperature     <- as.data.frame(t(temperature[1:MAX_DEPTH,]))
 df_salinity        <- as.data.frame(t(sal[1:MAX_DEPTH,]))
 
 # Ajouter noms clairs pour les colonnes (chaque colonne = une profondeur)
