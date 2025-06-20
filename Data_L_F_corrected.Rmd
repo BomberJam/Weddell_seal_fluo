@@ -27,13 +27,23 @@ library(ggnewscale)
 library(nortest)
 
 ```
-<h2> Global variables, paths and NetCDF extraction</h2>
-<h4> Global variables & Paths</h4>
+#  GLOBAL VARIABLES
+##  Global variables & Paths
 ```{r variables}
-MAX_CHLA_DEPTH <- 175       # define depth at which to consider dark signal (CHLA "absolute zero")
+MAX_CHLA_DEPTH <- 175 # define depth at which to consider dark signal (CHLA "absolute zero")
 MAX_DEPTH <- 600
 SURFACE_NOT_NAN <- 4:10
 idprofile <- 1 # Indice du profil affiché sur les plots individuels.
+
+DDU_loc=NULL
+DDU_loc$lat = -66.66306	
+DDU_loc$lon = 140.00083
+DDU_loc=as.data.frame(DDU_loc)
+
+LON_MIN <- 130
+LON_MAX <- 150
+LAT_MIN <- -68
+LAT_MAX <- -65
 
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
@@ -44,24 +54,40 @@ SEAL_NAME <- paste0(DEPLOY_FOLDER,"-913-18") # ...ou d'individu
 SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 RSD_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, SEAL_NAME)
+
+BATHY_FOLDER <- "bathy"
+FINE_TOPO_FILE <- "gvdem100v3/w001001.adf"
+LARGE_TOPO_FILE <- "gebco_2023_n-50.0_s-79.0_w90.0_e180.0.tif"
+BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
+BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
+
+FAST_ICE_FOLDER <- "fast_ice"
+FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
+FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
+
+AMSR_FOLDER <- "amsr2"
+AMSR_FOLDER_YEAR <- "2019"
+AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
+AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
+AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 ```
 
-<h4>NetCDF Extract</h4>
+## NetCDF Extract
 ```{r nc-code}
 nc_data <- nc_open(NC_PATH)
 lon   <- ncvar_get(nc_data, "LONGITUDE")
 lat   <- ncvar_get(nc_data, "LATITUDE")
 raw_chla  <- ncvar_get(nc_data, "CHLA")
 raw_light <- ncvar_get(nc_data, "LIGHT")
-temperature  <- ncvar_get(nc_data, "TEMP_ADJUSTED")
-sal   <- ncvar_get(nc_data, "PSAL_ADJUSTED")
-pres  <- ncvar_get(nc_data, "PRES_ADJUSTED")
+temperature  <- ncvar_get(nc_data, "TEMP")
+sal   <- ncvar_get(nc_data, "PSAL")
+pres  <- ncvar_get(nc_data, "PRES")
 juld  <- ncvar_get(nc_data, "JULD")
 nc_close(nc_data)
 ```
 
-<h2>Date and coordinates correction</h2>
-<h4>Date formatting</h4>
+# Date and coordinates correction
+## Date formatting
 ```{r dataframe}
 # Vectorisation de la profondeur
 pres_vec <- pres[, 1]
@@ -71,28 +97,28 @@ dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
 dateTime <- round(dateTime, units = "mins")  # arrondi à la minute la plus proche
 ```
 
-<h4>Correcting longitude and latitude</h4>
+## Correcting longitude and latitude
 ```{r corrected lon lat}
 diag <- read.csv("filtered_dives_wd.csv", stringsAsFactors = FALSE)
 diag$date <- as.POSIXct(diag$posix_date, format="%Y-%m-%d %H:%M")
 
 # extraire l'individu qui nous intéresse et trier par date
-df_wd11 <- diag %>% filter(REF == SEAL_NAME)
-df_wd11 <- df_wd11 %>% arrange(date)
+df_wd <- diag %>% filter(REF == SEAL_NAME)
+df_wd <- df_wd %>% arrange(date)
 
-t1 <- as.numeric(df_wd11$date )
+t1 <- as.numeric(df_wd$date )
 t2 <- as.numeric(as.POSIXct(dateTime))
 
 cols <- c("interpLat", "interpLon")
 interp_results <- lapply(cols, function(col) {
-  approx(x = t1, y = df_wd11[[col]], xout = t2, rule = 2)$y
+  approx(x = t1, y = df_wd[[col]], xout = t2, rule = 2)$y
 })
 
 names(interp_results) <- paste0(cols, "_corr")
 df_interp <- as.data.frame(interp_results)
 
 ```
-
+### Plotting original and corrected coordinates
 ```{r}
 
 df_original <- data.frame(lon = lon, lat = lat)
@@ -111,7 +137,7 @@ lon <- df_interp$interpLon_corr
 lat <- df_interp$interpLat_corr
 ```
 
-<h2>Computing Mixed Layer Depth</h2>
+# MLD
 ```{r MLD}
 
 # Fonction pour trouver le premier index valide
@@ -141,7 +167,7 @@ validProfiles <- which(profileStartDepth <= minProfileStartDepth)
 # Boucle sur les profils valides
 for (i in validProfiles) {
   S <- sal[, i]
-  T <- temp[, i]
+  T <- temperature[, i]
   P <- pres[, i]
 
   good <- !is.na(S) & !is.na(T) & !is.na(P)
@@ -149,7 +175,8 @@ for (i in validProfiles) {
 
   # Calcul de la densité potentielle
   ctd <- as.ctd(salinity = S[good], temperature = T[good], pressure = P[good])
-  sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
+  #sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
+  sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, 0)
 
   full_sigma0 <- rep(NA, n_levels)
   full_sigma0[which(good)] <- sigma0
@@ -178,7 +205,7 @@ df_mld <- data.frame(
   value = mld_vec[validProfiles]
 )
 ```
-
+## Plotting MLD
 ```{r}
 
 ggplot(df_mld, aes(x = profile, y = value)) +
@@ -190,8 +217,8 @@ ggplot(df_mld, aes(x = profile, y = value)) +
 
 ```
 
-<h2>LIGHT</h2>
-<h4>LIGHT : Estimation of NA columns</h4>
+# LIGHT
+## Estimation of NA columns
 ```{r NaN_Chla}
 col_na_only <- apply(raw_light, 2, function(col) all(is.na(col)))
 which(col_na_only)
@@ -201,7 +228,7 @@ light_non_nan <- raw_light[, !col_na_only]
 cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 ```
 
-<h4>Computing Dark value for light profile</h4>
+## Dark-value correction for light profile
 ```{r DarkValue}
 
 light_non_log <- exp(raw_light)
@@ -353,7 +380,7 @@ light_corrected_log <- log(pmax(light_corrected_non_log, 1e-10));
 
 ```
 
-<h4>Quenching depth, based on PAR15</h4>
+### Quenching depth, based on PAR15
 ```{r Quenching depth}
 # Calcule la profondeur où le seuil d'extinction (quenching) de 15 µmol.m⁻².s⁻¹ est atteint (Xing et al. (2018))
 quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
@@ -364,7 +391,7 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 })
 
 ```
-
+#### Plotting Quenching depth
 ```{r}
 
 df_quench <- data.frame(
@@ -381,7 +408,7 @@ ggplot(df_quench, aes(x = profile, y = value)) +
 
 ```
 
-<h4>Plotting one light profile, before and after dark value correction</h4>
+#### Plotting one light profile, before and after dark value correction
 ```{r LightProfilePlot}
 # Plot
 
@@ -391,7 +418,8 @@ ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
 
 plot(light_non_log[, idprofile], pres_vec, type = "l", col = "blue",
      ylim = rev(ylim_vals), xlim = c(xlim_vals),
-     xlab = "Light ln(µmol/m²/sec)", ylab = "Depth (m)", main = paste0("Light profile ",idprofile," - Original and Corrected\n", SEAL_NAME))
+     xlab = "Light ln(µmol/m²/sec)", ylab = "Depth (m)", 
+     main = paste0("Light profile ",idprofile," - Original and Corrected\n", SEAL_NAME, "(",dateTime[idprofile],")"))
 
 lines(light_corrected_non_log[, idprofile], pres_vec, col = "red")
 legend("bottomright", legend = c("Original", "Corrected"),col = c("blue", "red"), lty = 1, bty = "n")
@@ -403,7 +431,7 @@ legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purp
 
 ```
 
-<h4>Plotting all light profiles, before and after dark value correction</h4>
+#### Plotting all light profiles, before and after dark value correction
 ```{r PlotAllProfiles-original&Corrected}
 # Plot
 
@@ -428,7 +456,7 @@ grid()
 
 ```
 
-<h4>Total light for each profile</h4>
+### Total light for each profile
 ```{r Total-Light}
 # Plot
 
@@ -452,12 +480,8 @@ axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2
 
 ```
 
-<h4>Saving light profiles </h4>
+## Saving light profiles 
 ```{r SaveAndClassifyLightProfiles}
-valid_indices <- !is.na(light_non_log[, idprofile]) | !is.na(light_corrected_non_log[, idprofile])
-xlim_vals <- range(c(light_non_log[, idprofile], light_corrected_non_log[, idprofile]), na.rm = TRUE)
-ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
-
 # Dossiers de sortie
 dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME, "light")
 dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
@@ -466,47 +490,68 @@ nlight = ncol(light_corrected_non_log)
 
 for (i in 1:nlight) {
   filename <- paste0(dir_plot, "/", SEAL_NAME, "_", i, ".png")
-  
-  png(filename, width = 800, height = 600)
-  
-  plot(light_non_log[1:MAX_CHLA_DEPTH, i],
-       pres_vec[1:MAX_CHLA_DEPTH],
-       type = "l",
-       col = "blue",
-       ylim = rev(ylim_vals),
-       xlim = xlim_vals,
-       xlab = "Light ln(µmol/m²/sec)",
-       ylab = "Depth (m)",
-       main = paste0("Light profile ", i, " - Original and Corrected\n", SEAL_NAME))
-  
-  lines(light_corrected_non_log[1:MAX_CHLA_DEPTH, i],
-        pres_vec[1:MAX_CHLA_DEPTH],
-        col = "red")
-  
-  legend("bottomright",
-         legend = c("Original", "Corrected"),
-         col = c("blue", "red"),
-         lty = 1,
-         bty = "n")
-  
-  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
-  abline(h = df_mld$value[i], col = "purple", lty = 2)
-  
-  legend("bottomleft",
-         legend = c("Quenching Depth", "MLD"),
-         col = c("cyan", "purple"),
-         lty = 2,
-         bty = "n")
-  
-  dev.off()
+
+  # Ajout d'une exception car probleme de device (dev.off) si les profils à plot sont trop nombreux
+  tryCatch({
+    png(filename, width = 800, height = 600)
+
+    raw_profile <- light_non_log[, i]
+    corrected_profile <- light_corrected_non_log[, i]
+
+    # Vérifie s'il y a au moins une valeur non-NA
+    if (all(is.na(raw_profile)) & all(is.na(corrected_profile))) {
+      next  # Skip ce profil si aucune donnée
+    }
+    # Indices valides
+    valid_indices <- !is.na(raw_profile) | !is.na(corrected_profile)
+    # Bornes dynamiques
+    xlim_vals <- range(c(raw_profile, corrected_profile), na.rm = TRUE)
+    ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+
+    dateF <- format(dateTime[i], "%d-%m-%Y")
+
+    plot(raw_profile[1:MAX_CHLA_DEPTH],
+         pres_vec[1:MAX_CHLA_DEPTH],
+         type = "l",
+         col = "blue",
+         ylim = rev(ylim_vals),
+         xlim = xlim_vals,
+         xlab = "Light ln(µmol/m²/sec)",
+         ylab = "Depth (m)",
+         main = paste0("Light profile ", i, " - Original and Corrected (Dark value)\n", SEAL_NAME," (",dateF,")"))
+
+
+    lines(corrected_profile[1:MAX_CHLA_DEPTH],
+          pres_vec[1:MAX_CHLA_DEPTH],
+          col = "red")
+
+    legend("bottomright",
+           legend = c("Original", "Corrected (Dark value)"),
+           col = c("blue", "red"),
+           lty = 1,
+           bty = "n")
+
+    abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+    abline(h = df_mld$value[i], col = "purple", lty = 2)
+
+    legend("bottomleft",
+           legend = c("Quenching Depth", "MLD"),
+           col = c("cyan", "purple"),
+           lty = 2,
+           bty = "n")
+
+    dev.off()
+  }, error = function(e) {
+    message("Erreur lors du plot du profil ", i, ": ", conditionMessage(e))
+    if (length(dev.list()) > 0) dev.off()  # ferme si un device est resté ouvert
+  })
 }
-
-# cat(nlight, "profils enregistrés dans", dir_plot, "\n")
-
+# Ligne pour "évacuer" les devices qui ne sont pas fermés correctement
+while (dev.cur() > 1) dev.off()
 ```
 
-<h2>FLUO</h2>
-<h4>FLUO : Estimation of NA columns</h4>
+# FLUO
+## Estimation of NA columns
 ```{r NaN_Chla}
 col_na_only <- apply(raw_chla, 2, function(col) all(is.na(col)))
 which(col_na_only)
@@ -514,7 +559,7 @@ which(col_na_only)
 cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 ```
 
-<h4>Dark-value correction for Chl-a profiles</h4>
+## Dark-value correction for Chl-a profiles
 ```{r DarkValue_chla}
 # Variables d'entrée
 max_depth <- nrow(raw_chla)
@@ -522,7 +567,7 @@ PDARK_temp <- MAX_CHLA_DEPTH + 1
 delta_for_cstCHLA <- 0.01
 darkDepthDelta_temp <- 10
 maxCHLA_depth <- 175
-# Extraction du sous-ensemble profond de la matrice CHLA
+# Extraction des 10 dernieres profondeurs de la matrice CHLA
 chlaDeep_temp <- raw_chla[(MAX_CHLA_DEPTH - (darkDepthDelta_temp - 1)) : MAX_CHLA_DEPTH, ]
 # Médiane par colonne (profil)
 chlaProfDarkVal_temp <- apply(chlaDeep_temp, 2, median, na.rm = TRUE)
@@ -539,11 +584,13 @@ CHLA_nadRegDk <- CHLA_nadRegDk - chlaOffset_temp
 CHLA_nadRegDk[CHLA_nadRegDk < 0] <- 0
 CHLA_nadRegDk <- round(CHLA_nadRegDk, 4)
 
+# Profils de chla sans colonne completement NA
 chla_non_nan <- CHLA_nadRegDk [, !col_na_only]
 n_profile <- ncol(chla_non_nan)
 
 for (ii in 1:n_profile) {
   profile_data <- chla_non_nan[, ii]
+  # Bornes du profil
   firstNonNan_temp <- which(!is.na(profile_data))[1]
   lastNonNan_temp <- tail(which(!is.na(profile_data)), 1)
   
@@ -556,31 +603,33 @@ for (ii in 1:n_profile) {
         break
       }
     }
-    if(jj != lastNonNan_temp -1) {
+    if (jj != lastNonNan_temp - 1) {
       ind_dark_temp <- jj + 1
-      PDARK_temp = pres_vec[ind_dark_temp]
-      CHLA_nadRegDk[ind_dark_temp:lastNonNan_temp,ii] <- 0
+      PDARK_temp <- pres_vec[ind_dark_temp]
+      # si la colonne contient *autre chose que des NA*
+      if (!all(is.na(CHLA_nadRegDk[, ii]))) {
+        CHLA_nadRegDk[ind_dark_temp:lastNonNan_temp, ii] <- 0
+      }
     }
   }
 }
-
-# Résultats finaux dans :
+# Résultats finaux
 chla_corrected_dk <- CHLA_nadRegDk
 
 ```
 
-<h4>Plotting dark value correction for Chl-a</h4>
+### Plotting dark value correction for Chl-a
 ```{r plot_dk_chla}
 
 valid_indices <- !is.na(raw_chla[, idprofile]) | !is.na(chla_corrected_dk[, idprofile])
 xlim_vals <- range(c(raw_chla[, idprofile], chla_corrected_dk[, idprofile]), na.rm = TRUE)
 ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
 
-# Plot only one of the 150
+# Plot only one plot
 plot(raw_chla[1:MAX_CHLA_DEPTH, idprofile], pres_vec[1:MAX_CHLA_DEPTH], type = "l", col = "blue",
      ylim = rev(ylim_vals),
      xlim = xlim_vals,
-     xlab = "Chl-a (mg/m³)", ylab = "Depth (m)", main = paste("Chl-a profile (DK)", idprofile, "-", SEAL_NAME))
+     xlab = "Chl-a (mg/m³)", ylab = "Depth (m)", main = paste("Chl-a profile (DK)", idprofile, "-", SEAL_NAME, "(",dateTime[idprofile],")"))
 
 lines(chla_corrected_dk[1:MAX_CHLA_DEPTH, idprofile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
 
@@ -591,57 +640,8 @@ abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
 
 legend("bottomleft", legend = "MLD", col =  "purple", lty = 1, bty="n")
 ```
-```{r}
-valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(raw_chla[, idprofile])
-xlim_vals <- range(c(chla_corrected_dk[, idprofile], raw_chla[, idprofile]), na.rm = TRUE)
-ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
 
-# Dossiers de sortie
-dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_dk")
-dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
-
-nchla = ncol(chla_corrected_dk)
-
-for (i in 1:nchla) {
-  filename <- paste0(dir_plot, "/", SEAL_NAME, "_DarkValue", i, ".png")
-  
-  png(filename, width = 800, height = 600)
-  
-  plot(raw_chla[1:MAX_CHLA_DEPTH, i],
-       pres_vec[1:MAX_CHLA_DEPTH],
-       type = "l",
-       col = "blue",
-       ylim = rev(ylim_vals),
-       xlim = xlim_vals,
-       xlab = "Chl-a (mg/m³))",
-       ylab = "Depth (m)",
-       main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME))
-  
-  lines(chla_corrected_dk[1:MAX_CHLA_DEPTH, i],
-        pres_vec[1:MAX_CHLA_DEPTH],
-        col = "red")
-  
-  legend("bottomright",
-         legend = c("Original", "Corrected"),
-         col = c("blue", "red"),
-         lty = 1,
-         bty = "n")
-  
-  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
-  abline(h = df_mld$value[i], col = "purple", lty = 2)
-  
-  legend("bottomleft",
-         legend = c("Quenching Depth", "MLD"),
-         col = c("cyan", "purple"),
-         lty = 2,
-         bty = "n")
-  
-  dev.off()
-}
-
-```
-
-<h4>Plotting all dark value correction profiles for Chl-a, before and after correction</h4>
+### Plotting all dark value correction profiles for Chl-a, before and after correction
 ```{r plot_all_dk_chla}
 matplot(raw_chla[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
         type = "l",
@@ -662,13 +662,83 @@ matplot(chla_corrected_dk[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
 grid()
 ```
 
-<h4>Non Photochemical Quenching correction for Chl-a profiles (as dark-value correction works only for some profiles, need to verify this code once DK is fixed)</h4>
+### Saving Chl-a profiles (original and dark value corrected)
+```{r}
+
+# Dossiers de sortie
+dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_dk")
+dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
+
+nchla = ncol(chla_corrected_dk)
+
+for (i in 1:nchla) {
+  filename <- paste0(dir_plot, "/", SEAL_NAME, "_DarkValue", i, ".png")
+  
+  tryCatch({
+    png(filename, width = 800, height = 600)
+    
+    raw_profile <- raw_chla[, i]
+    corrected_profile <- chla_corrected_dk[, i]
+  
+    # Vérifie s'il y a au moins une valeur non-NA
+    if (all(is.na(raw_profile)) & all(is.na(corrected_profile))) {
+      next  # Skip ce profil si aucune donnée
+    }
+    
+    # Indices valides
+    valid_indices <- !is.na(raw_profile) | !is.na(corrected_profile)
+    # Bornes dynamiques
+    xlim_vals <- range(c(raw_profile, corrected_profile), na.rm = TRUE)
+    ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+    
+    dateF <- format(dateTime[i], "%d-%m-%Y")
+
+    plot(raw_profile[1:MAX_CHLA_DEPTH],
+         pres_vec[1:MAX_CHLA_DEPTH],
+         type = "l",
+         col = "blue",
+         ylim = rev(ylim_vals),
+         xlim = xlim_vals,
+         xlab = "Chl-a (mg/m³))",
+         ylab = "Depth (m)",
+         main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME," (",dateF,")"))
+    
+    lines(corrected_profile[1:MAX_CHLA_DEPTH],
+          pres_vec[1:MAX_CHLA_DEPTH],
+          col = "red")
+    
+    legend("bottomright",
+           legend = c("Original", "Corrected"),
+           col = c("blue", "red"),
+           lty = 1,
+           bty = "n")
+    
+    abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+    abline(h = df_mld$value[i], col = "purple", lty = 2)
+    
+    legend("bottomleft",
+           legend = c("Quenching Depth", "MLD"),
+           col = c("cyan", "purple"),
+           lty = 2,
+           bty = "n")
+    
+    dev.off()
+  }, error = function(e) {
+      message("Erreur lors du plot du profil ", i, ": ", conditionMessage(e))
+      if (length(dev.list()) > 0) dev.off()  # ferme si un device est resté ouvert
+    })
+}
+while (dev.cur() > 1) dev.off()
+```
+
+## Non Photochemical Quenching correction for Chl-a profiles (as dark-value correction works only for some profiles, need to verify this code once DK is fixed)
 ```{r NPQ_correction}
+# Xing et al. (2018): 2.1.3 NPQ correction methods based on MLD and light-threshold depth 
 
 CHLA_nadRegDkNpq <- chla_corrected_dk # dk : dark value corrigée
 
 # Calcul de la profondeur de correction : min(MLD, quenchDepth)
-CORRDEPTH_temp <- ifelse(is.na(mld_vec), quenchDepth_vec,
+correction_depth <- ifelse(is.na(mld_vec), quenchDepth_vec,
                          ifelse(is.na(quenchDepth_vec), mld_vec,
                                 pmin(mld_vec, quenchDepth_vec)))
 
@@ -678,22 +748,23 @@ idx_chlaNonNan <- colSums(!is.na(raw_chla)) > 0
 idx_lightNonNan <- colSums(!is.na(raw_light)) > 0
 
 # Boucle sur les indices valides de CHLA et lumière non-NaN
-for (ii in which(idx_chlaNonNan & idx_lightNonNan)) {
+for (ii in which(idx_chlaNonNan & idx_lightNonNan)) { 
 
-  # Trouver le premier indice où la pression dépasse la profondeur de correction
-  indC_temp <- which(pres_vec >= CORRDEPTH_temp[ii])[1]
+  # Trouver le premier indice correspondant à min(MLD,QD)
+  indCorrection <- which(pres_vec >= correction_depth[ii])[1]
 
-  if (!is.na(indC_temp)) {
-    # Chercher la valeur maximale de CHLA dans l'intervalle surface -> CORRDEPTH
-    max_val <- max(chla_corrected_dk[1:indC_temp, ii], na.rm = TRUE)
-    indX12_temp <- which.max(chla_corrected_dk[1:indC_temp, ii])
-
-    # Corriger la CHLA : écraser les valeurs jusqu'à indX12 avec la valeur max
-    CHLA_nadRegDkNpq[1:indX12_temp, ii] <- max_val
+  if (!is.na(indCorrection)) {
+    # Chercher la valeur maximale de CHLA dans l'intervalle surface -> correction_depth
+    temp_vec <- chla_corrected_dk[1:indCorrection, ii]
+    ind_maxChla <- which.max(temp_vec)
+    max_chla <- temp_vec[ind_maxChla]
+    
+    # Corriger la CHLA : écraser les valeurs de la surface jusqu'à ind_maxChla avec la valeur max
+    CHLA_nadRegDkNpq[1:ind_maxChla, ii] <- max_chla
 
     # Mettre à jour la profondeur de correction si un indice a été trouvé
-    if (!is.na(indX12_temp)) {
-      CORRDEPTH_temp[ii_temp] <- indX12_temp
+    if (!is.na(ind_maxChla)) {
+      correction_depth[ii] <- ind_maxChla
     }
   }
 }
@@ -702,11 +773,57 @@ chla_corrected_q <- CHLA_nadRegDkNpq
 
 ```
 
-<h4>Plotting NPQ correction for Chl-a</h4>
+### Flags
+```{r}
+solar_angle <- sunAngle(dateTime, lon, lat)$altitude
+n_profile <- ncol(chla_corrected_q)
+flags <- rep("OK", n_profile)
+
+# NPQ layer might be thinner
+flags[exp(light_corrected_non_log[4,]) < 15] <- "NPQ layer might be thinner"
+# Shallow mixing conditions
+flags[mld_vec <= quenchDepth_vec] <- "Shallow mixing conditions"
+# Night profile
+flags[solar_angle <= -12] <- "Night profile"
+# Bottom of npq layer not reached
+flags[is.na(quenchDepth_vec)] <- "Bottom of npq layer not reached"
+# No Light data
+sumNan <- colSums(light_corrected_non_log, na.rm = TRUE)
+flags[sumNan == 0] <- "No Light data"
+# 0 : OK
+```
+
+### Max Chla depth
+```{r}
+
+max_inds <- sapply(1:ncol(chla_corrected_q), function(i) {
+  col_data <- chla_corrected_q[, i]
+  if(all(is.na(col_data))) return(NA_integer_) else return(which.max(col_data))
+})
+
+df_max <- data.frame(
+  profile = seq_along(max_inds),
+  value = max_inds
+)
+df_max <- df_max[!is.na(df_max$value), ]
+
+ggplot(df_max, aes(x = profile, y = value)) +
+  geom_point(shape = 4, color = "black") +
+  geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "darkgreen", linewidth = 0.25, se = FALSE) +
+  scale_y_reverse() +
+  labs(x = "Profile", y = "Depth (m)", title = paste0("Quenching Depth - ", SEAL_NAME)) +
+  theme_minimal()
+
+```
+
+#### Plotting NPQ correction for Chl-a
 ```{r NPQ_plot}
+idprofile <- 10
 valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(chla_corrected_q[, idprofile])
 xlim_vals <- range(c(chla_corrected_dk[, idprofile], chla_corrected_q[, idprofile]), na.rm = TRUE)
 ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+
+dateF <- format(dateTime[idprofile], "%d-%m-%Y")
 
 plot(
   chla_corrected_dk[1:MAX_CHLA_DEPTH, idprofile],
@@ -714,8 +831,8 @@ plot(
   type = "l", col = "blue",
   ylim = rev(ylim_vals),
   xlim = xlim_vals,
-  xlab = "Chl-a", ylab = "Depth",
-  main = paste("Profil", idprofile, "-", SEAL_NAME)
+  xlab = "Chl-a  (mg/m³)", ylab = "Depth (m)",
+  main = paste("Profil", idprofile, "-", SEAL_NAME, "(",dateF,") \n flag: ",flags[idprofile])
 )
 
 lines(chla_corrected_q[1:MAX_CHLA_DEPTH, idprofile], pres_vec[1:MAX_CHLA_DEPTH], col = "red")
@@ -728,29 +845,8 @@ abline(h = df_mld$value[idprofile], col = "purple", lty = 2)
 legend("bottomleft", legend = c("Quenching Depth", "MLD"), col = c("cyan", "purple"), lty = 1, bty="n")
 
 ```
-<h4>Flags</h4>
-```{r}
-solar_angle <- sunAngle(date, lon, lat)$altitude
-n_profile <- ncol(chla_corrected_q)
-flags <- rep(0, n_profile)
 
-# NPQ layer might be thinner
-flags[exp(light_corrected_non_log[4,]) < 15] <- 1
-# Shallow mixing conditions
-flags[mld_vec <= quenchDepth_vec] <- 2
-# Night profile
-flags[solar_angle <= -12] <- 7
-# Bottom of npq layer not reached
-flags[is.na(quenchDepth_vec)] <- 8
-# No Light data
-sumNan <- colSums(light_corrected_non_log, na.rm = TRUE)
-flags[sumNan == 0] <- 9
-# 0 : OK
-
-flags
-```
-
-<h4>Computing total fluo per profile after correction</h4>
+#### Total fluo per profile after correction
 ```{r TotalChla}
 chla_subset <- chla_corrected_q [1:MAX_CHLA_DEPTH, !col_na_only]
 total_chla <- colSums(chla_subset, na.rm = TRUE)
@@ -771,12 +867,8 @@ axis(1, at = seq_along(dateTime), labels = format(dateTime, "%Y-%m-%d"), las = 2
 
 ```
 
-<h4>Saving and classifying Chl-a profiles</h4>
+#### Saving Chl-a profiles plots (DK vs NPQ)
 ```{r SaveAndClassifyChlaProfiles}
-valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(chla_corrected_q[, idprofile])
-xlim_vals <- range(c(chla_corrected_dk[, idprofile], chla_corrected_q[, idprofile]), na.rm = TRUE)
-ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
-
 # Dossiers de sortie
 dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_npq")
 dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
@@ -786,46 +878,64 @@ nchla = ncol(chla_corrected_q)
 for (i in 1:nchla) {
   filename <- paste0(dir_plot, "/", SEAL_NAME, "_NPQ", i, ".png")
   
-  png(filename, width = 800, height = 600)
+  tryCatch({
+    png(filename, width = 800, height = 600)
+    
+    raw_profile <- chla_corrected_dk[, i]
+    corrected_profile <- chla_corrected_q[, i]
   
-  plot(chla_corrected_dk[1:MAX_CHLA_DEPTH, i],
-       pres_vec[1:MAX_CHLA_DEPTH],
-       type = "l",
-       col = "blue",
-       ylim = rev(ylim_vals),
-       xlim = xlim_vals,
-       xlab = "Chl-a (mg/m³))",
-       ylab = "Depth (m)",
-       main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME))
-  
-  lines(chla_corrected_q[1:MAX_CHLA_DEPTH, i],
-        pres_vec[1:MAX_CHLA_DEPTH],
-        col = "red")
-  
-  legend("bottomright",
-         legend = c("Original", "Corrected"),
-         col = c("blue", "red"),
-         lty = 1,
-         bty = "n")
-  
-  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
-  abline(h = df_mld$value[i], col = "purple", lty = 2)
-  
-  legend("bottomleft",
-         legend = c("Quenching Depth", "MLD"),
-         col = c("cyan", "purple"),
-         lty = 2,
-         bty = "n")
-  
-  dev.off()
+    # Vérifie s'il y a au moins une valeur non-NA
+    if (all(is.na(raw_profile)) & all(is.na(corrected_profile))) {
+      next  # Skip ce profil si aucune donnée
+    }
+    # Indices valides
+    valid_indices <- !is.na(raw_profile) | !is.na(corrected_profile)
+    # Bornes dynamiques
+    xlim_vals <- range(c(raw_profile, corrected_profile), na.rm = TRUE)
+    ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+    
+    dateF <- format(dateTime[i], "%d-%m-%Y")
+
+    plot(raw_profile[1:MAX_CHLA_DEPTH],
+         pres_vec[1:MAX_CHLA_DEPTH],
+         type = "l",
+         col = "blue",
+         ylim = rev(ylim_vals),
+         xlim = xlim_vals,
+         xlab = "Chl-a (mg/m³))",
+         ylab = "Depth (m)",
+         main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME,, "(",dateF,")\n - Correction depth : ", correction_depth[i], " m - flag: ",flags[i]))
+    
+    lines(corrected_profile[1:MAX_CHLA_DEPTH],
+          pres_vec[1:MAX_CHLA_DEPTH],
+          col = "red")
+    
+    legend("bottomright",
+           legend = c("Original", "Corrected"),
+           col = c("blue", "red"),
+           lty = 1,
+           bty = "n")
+    
+    abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+    abline(h = df_mld$value[i], col = "purple", lty = 2)
+    
+    legend("bottomleft",
+           legend = c("Quenching Depth", "MLD"),
+           col = c("cyan", "purple"),
+           lty = 2,
+           bty = "n")
+    
+    dev.off()
+  }, error = function(e) {
+      message("Erreur lors du plot du profil ", i, ": ", conditionMessage(e))
+      if (length(dev.list()) > 0) dev.off()  # ferme si un device est resté ouvert
+    })
 }
+while (dev.cur() > 1) dev.off()
 ```
 
+### Saving Chl-a profiles (Original / Dark value / NPQ)
 ```{r SaveAndClassifyChlaProfiles}
-valid_indices <- !is.na(chla_corrected_dk[, idprofile]) | !is.na(chla_corrected_q[, idprofile])
-xlim_vals <- range(c(chla_corrected_dk[, idprofile], chla_corrected_q[, idprofile]), na.rm = TRUE)
-ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
-
 # Dossiers de sortie
 dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_dk_npq")
 dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
@@ -835,45 +945,64 @@ nchla = ncol(raw_chla)
 for (i in 1:nchla) {
   filename <- paste0(dir_plot, "/", SEAL_NAME, "_DK_NPQ", i, ".png")
   
-  png(filename, width = 800, height = 600)
+  tryCatch({
+    png(filename, width = 800, height = 600)
+    
+    raw_profile <- raw_chla[, i]
+    corrected_profile <- chla_corrected_q[, i]
   
-  plot(chla_corrected_dk[1:MAX_CHLA_DEPTH, i],
-       pres_vec[1:MAX_CHLA_DEPTH],
-       type = "l",
-       col = "blue",
-       ylim = rev(ylim_vals),
-       xlim = xlim_vals,
-       ylab = "Depth (m)",
-       main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME))
-   
-  lines(raw_chla[1:MAX_CHLA_DEPTH, i],
-        pres_vec[1:MAX_CHLA_DEPTH],
-        col = "darkgreen")
-  
-  lines(chla_corrected_q[1:MAX_CHLA_DEPTH, i],
-        pres_vec[1:MAX_CHLA_DEPTH],
-        col = "red")
-  
-  legend("bottomright",
-         legend = c("Dark value", "Original", "NPQ"),
-         col = c("blue", "darkgreen", "red"),
-         lty = 1,
-         bty = "n")
-  
-  abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
-  abline(h = df_mld$value[i], col = "purple", lty = 2)
-  
-  legend("bottomleft",
-         legend = c("Quenching Depth", "MLD"),
-         col = c("cyan", "purple"),
-         lty = 2,
-         bty = "n")
-  
-  dev.off()
+    # Vérifie s'il y a au moins une valeur non-NA
+    if (all(is.na(raw_profile)) & all(is.na(corrected_profile))) {
+      next  # Skip ce profil si aucune donnée
+    }
+    # Indices valides
+    valid_indices <- !is.na(raw_profile) | !is.na(corrected_profile)
+    # Bornes dynamiques
+    xlim_vals <- range(c(raw_profile, corrected_profile), na.rm = TRUE)
+    ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
+    
+    plot(chla_corrected_dk[1:MAX_CHLA_DEPTH, i],
+         pres_vec[1:MAX_CHLA_DEPTH],
+         type = "l",
+         col = "blue",
+         ylim = rev(ylim_vals),
+         xlim = xlim_vals,
+         ylab = "Depth (m)",
+         main = paste0("Chl-a profile ", i, " - Original and Dark Value Corrected\n", SEAL_NAME, " - Correction depth : ", correction_depth[i], " m - flag: ",flags[i], "(",dateTime[i],")"))
+     
+    lines(raw_profile[1:MAX_CHLA_DEPTH],
+          pres_vec[1:MAX_CHLA_DEPTH],
+          col = "red")
+    
+    lines(corrected_profile[1:MAX_CHLA_DEPTH],
+          pres_vec[1:MAX_CHLA_DEPTH],
+          col = "darkgreen")
+    
+    legend("bottomright",
+           legend = c("Original", "Dark value", "NPQ"),
+           col = c("red", "blue", "darkgreen"),
+           lty = 1,
+           bty = "n")
+    
+    abline(h = quenchDepth_vec[i], col = "cyan", lty = 2)
+    abline(h = df_mld$value[i], col = "purple", lty = 2)
+    
+    legend("bottomleft",
+           legend = c("Quenching Depth", "MLD"),
+           col = c("cyan", "purple"),
+           lty = 2,
+           bty = "n")
+    
+    dev.off()
+  }, error = function(e) {
+      message("Erreur lors du plot du profil ", i, ": ", conditionMessage(e))
+      if (length(dev.list()) > 0) dev.off()  # ferme si un device est resté ouvert
+    })
 }
+while (dev.cur() > 1) dev.off()
 ```
 
-<h2>Light and fluo corrected : profiles</h2>
+## Light and fluo corrected profiles
 ```{r}
 
 library(plotly)
@@ -930,8 +1059,7 @@ fig
 
 ```
 
-<h2>Light Temperature Salinity Fluo</h2>
-<h4>Plotting one Light temperature salinity & FLUO profile</h4>
+## Plotting one Light temperature salinity & FLUO profile
 ```{r PlotProfile_LTSC}
 # Création du data.frame profilé brut (avec profondeur tronquée)
 df_raw <- data.frame(
@@ -968,8 +1096,175 @@ ggplot(df_profile, aes(x = value, y = depth)) +
                  " (", format(dateTime[idprofile], "%Y-%m-%d"), ")"))
 
 ```
+# MAPS
+## Crops
+```{r}
+# C'est la taille de la carte que l'on souhaite
+crop <- c(min(lon), max(lon), min(lat), max(lat))
+ext_crop <- extent(crop)
+```
+## Loading bathymetry
+```{r Bathy}
+fine_topo <- raster(BATHY_PATH_FINE)
+fine_topo[fine_topo >=0] <- NA
+fine_topo_spat <- terra::rast(fine_topo)
 
-<h2>RDS Export</h2>
+large_topo <- raster(BATHY_PATH_LARGE)
+large_topo[large_topo >=0] <-NA
+large_topo_spat <- terra::rast(large_topo)
+
+# Crop raster
+fine_topo_spat_crop <- crop(fine_topo_spat, ext_crop)
+large_topo_spat_crop <- crop(large_topo_spat, ext_crop)
+```
+
+## Loading and cropping fast ice raster
+```{r Fast_ice}
+prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+ex <- c(-2691055, 2933945, -2390156, 2309844)
+
+fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
+set.ext(fast_ice_raster, ext(ex))
+set.crs(fast_ice_raster, crs(prj))
+#plot(fast_ice_raster[[1]], legend = FALSE) # le continent
+
+# points <- cbind(lon = c(LON_MIN, LON_MAX), lat = c(LAT_MIN, LAT_MAX))
+points <- cbind(lon = c(crop[1], crop[2]), lat = c(crop[3], crop[4]))
+prjpoints <- project(points, to = prj, from = "EPSG:4326")
+new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
+new_r=crop(fast_ice_raster,new_ex)
+
+# temps du raster
+raster_time <- time(fast_ice_raster)  
+# temps de l'individu
+date_min <- min(dateTime, na.rm = TRUE)
+date_max <- max(dateTime, na.rm = TRUE)
+# Trouve les indices dans le raster correspondant aux dates de l'individu
+time_index <- which(raster_time >= date_min & raster_time <= date_max)
+
+x_sub <- subset(new_r, time_index)
+plot(x_sub, legend = FALSE)
+
+```
+
+### Removing values from the raster we don't want
+```{r fast_ice_processing}
+x_sub2= project(x_sub, crs(large_topo_spat_crop), 
+                res = res(large_topo_spat_crop)) 
+
+names(x_sub2) <- raster_time[time_index]
+plot(x_sub2, legend = FALSE)
+#x_sub2 <- crop(x_sub2, extent(LON_MIN, LON_MAX, LAT_MIN, LAT_MAX))
+plot(x_sub2, legend = FALSE)
+
+#description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
+x_sub2=round(x_sub2)
+
+x_sub2_df <- as.data.frame(x_sub2, xy = TRUE)
+x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with("2019"), names_to = "month_label", values_to = "value")
+#x_sub2_long_select <- x_sub2_long # %>% filter(value == c(1,3,4))
+
+# Crop dataset fast-ice ice shelf continent 
+x_sub2_long_crop <- x_sub2_long %>%
+  dplyr::filter(x >= crop[1], x <= crop[2],
+                y >= crop[3], y <= crop[4])
+
+```
+
+```{r}
+
+mois_cible <- "2019-05"
+df_plot <- x_sub2_long_crop %>%
+  dplyr::filter(grepl(mois_cible, month_label))
+
+ggplot(df_plot, aes(x = x, y = y, fill = factor(value))) +
+  geom_tile() +
+  coord_quickmap() + 
+  #coord_fixed() +
+  scale_fill_manual(
+    name = "Type surface",
+    values = c(
+      "0" = "blue",       # pack ice / ocean
+      "1" = "grey50",     # continent
+      "2" = "green4",     # islands
+      "3" = "lightblue",  # ice shelf
+      "4" = "darkblue",   # fast ice
+      "5" = "orange",        # manual fast ice edge
+      "6" = "red"      # auto fast ice edge
+    ),
+    labels = c("Pack ice / Ocean", "Continent", "Islands", "Ice shelf", "Fast ice", "Manual edge", "Auto edge")
+  ) +
+  labs(
+    title = paste("Surface type -", mois_cible),
+    x = "Longitude", y = "Latitude", fill = "Surface"
+  ) +
+  theme_minimal()
+
+```
+
+## Mean/sd/median SIC raster map
+```{r AMSR_processing}
+
+wgs <- "+proj=longlat +ellps=WGS84"
+all_files <- list.files(AMSR_FOLDER_PATH, full.names = TRUE)
+
+target_year_months <- format(raster_time[time_index], "%Y%m") # "2019-05"
+date_obj <- as.Date(paste0(target_year_months, "01"), format = "%Y%m%d")
+formatted_title <- format(date_obj, "%B %Y") 
+
+results_list <- lapply(target_year_months, function(m) {
+
+  # Sélectionner fichiers correspondant au mois m
+  selected_files <- all_files[str_detect(all_files, paste0("s3125-", m))]
+  
+  # Charger et crop chaque raster
+  raster_list <- lapply(selected_files, function(f) {
+    r <- raster(f)
+    r[r > 100] <- NA_real_
+    r
+  })
+  
+  # Empiler
+  raster_stack <- stack(raster_list)
+  ref_raster <- raster_list[[1]]
+  
+  # Recadrage
+  boxext <- extent(projectExtent(raster(ext_crop, crs = wgs), projection(ref_raster)))
+  raster_cropped <- crop(raster_stack, boxext)
+  
+  # Statistiques
+  mean_r <- calc(raster_cropped, mean, na.rm = TRUE)
+  median_r <- calc(raster_cropped, median, na.rm = TRUE)
+  sd_r <- calc(raster_cropped, sd, na.rm = TRUE)
+  
+  # Projeter vers WGS84
+  mean_r <- projectRaster(mean_r, crs = wgs)
+  median_r <- projectRaster(median_r, crs = wgs)
+  sd_r <- projectRaster(sd_r, crs = wgs)
+  
+  date_obj <- as.Date(paste0(m, "01"), format = "%Y%m%d")
+  formatted_title <- format(date_obj, "%B %Y") 
+  
+  # Retourner résultats
+  list(
+    month = formatted_title,
+    mean = rast(mean_r),
+    median = rast(median_r),
+    sd = rast(sd_r)
+  )
+})
+
+```
+### Plotting Mean/sd/median of SIC raster map
+```{r}
+idMap <- 1
+plot(results_list[[idMap]]$mean, main = paste0("SIC Mean (", results_list[[idMap]]$month,")"))
+plot(results_list[[idMap]]$median, main = paste0("SIC Median (", results_list[[idMap]]$month,")"))
+plot(results_list[[idMap]]$sd, main = paste0("SIC SD (", results_list[[idMap]]$month,")"))
+
+```
+
+# RDS Export
 ```{r}
 
 # Nombre de profondeurs et de profils
@@ -1064,7 +1359,7 @@ sal_long <- melt(df_salinity,
 df_final <- Reduce(function(x, y) merge(x, y, by = c("seal_id", "profile_id", "depth_index")),
                    list(light_raw_long, light_corr_long, chla_raw_long, chla_corr_long, temp_long, sal_long))
 
-# Ajouter profondeur réelle (obligé d'avoir une version numerique, sinon la profondeur se trie par ordre alphabetique dans le csv)
+# Ajouter profondeur réelle (obligé d'avoir une version numerique, sinon la profondeur se trie par ordre alphabetique dans le rds)
 pres_vec <- pres_vec[1:MAX_DEPTH]
 df_final$depth <- pres_vec[as.integer(gsub("d", "", df_final$depth_index))]
 df_final$depth_num <- as.integer(gsub("d", "", df_final$depth_index))
@@ -1087,7 +1382,120 @@ df_profile_info <- data.frame(
 # Merge avec df_final (en format long)
 df_final <- merge(df_final, df_profile_info, by = "profile_id")
 
+df_final$date_simple <- format(df_final$date, "%Y-%m-%d")
+
+cols_to_check <- c("light_raw", "light_corrected", 
+                   "chla_raw", "chla_corrected",
+                   "temperature", "salinity")
+# Supprimer les lignes où les valeurs de cols_to_check sont nulles
+df_final <- df_final[!rowSums(is.na(df_final[, cols_to_check])) == length(cols_to_check), ]
+
+library(FNN)
+
+# Extraire les coordonnées
+coords_final <- df_final[, c("lon", "lat")]
+coords_sub <- x_sub2_long_crop[, c("x", "y")]
+
+# get.knnx cherche le plus proche voisin dans df_sub pour chaque point de df_final
+nn <- get.knnx(coords_sub, coords_final, k = 1)
+
+# Récupérer la valeur "fast_ice_presence" correspondante
+df_final$fast_ice_idx <- x_sub2_long_crop$value[nn$nn.index[, 1]]
+
 # Exporter en .rds (Difference avec le RData = RData plusieurs objets, rds 1 seul objet)
 saveRDS(df_final, file = paste0(RSD_PATH, "_data.rds"))
 
 ```
+
+<!-- ## LIGHT map with all individuals (SIC, Fast ice, ice shelf) -->
+<!-- ```{r} -->
+<!-- df_deployment_data <- readRDS(RDS_DEPLOYMENT_PATH) -->
+
+<!-- light_at_4m <- subset(df_deployment_data, depth == 4) -->
+<!-- light_at_4m <- light_at_4m[!is.na(light_at_4m$light_corrected), ] -->
+<!-- light_at_4m$month <- format(light_at_4m$date, "%m") -->
+
+<!-- plot_light <- light_at_4m[, c("date", "lon", "lat", "light_corrected", "month")] -->
+<!-- plot_light <- plot_light[order(plot_light$month), ] -->
+
+<!-- plot_light$month_label <- format(plot_light$date, "%Y - %B") -->
+<!-- plot_light$month_label <- factor(plot_light$month_label,  -->
+<!--     levels = unique(format(seq(min(plot_light$date), max(plot_light$date), by = "month"), "%Y - %B"))) -->
+
+<!-- # Tester la carte -->
+<!-- ggplot() + -->
+<!--   geom_spatraster_contour(data = fine_topo_spat_crop, color = "black") + -->
+<!--   #geom_spatraster_contour_text(data = fine_topo_spat_crop) + -->
+
+<!--   new_scale_fill() + -->
+<!--   geom_spatraster(data = mean_spat_crop, alpha = 0.7) + -->
+<!--   scale_fill_cmocean(name = "ice",na.value = NA) + -->
+
+<!--   new_scale_fill() + -->
+<!--   geom_raster(data = x_sub2_long_crop, aes(x = x, y = y, fill = factor(value)), alpha = 0.8, show.legend = FALSE) + -->
+<!--   scale_fill_manual(values = c( -->
+<!--   "1" = "slategray",  # continent -->
+<!--   "3" = "#A9D6E5",    # ice shelf -->
+<!--   "4" = "#A9D6E5"     # glacier -->
+<!--   ), na.value = NA) + -->
+
+<!--   new_scale_color() + -->
+<!--   geom_point(data = plot_light, aes(x = lon, y = lat, color = light_corrected), size = 1) + -->
+<!--   scale_color_viridis_c(limits = c(-15, 5), oob = scales::squish, na.value = NA) + -->
+
+<!--   geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1)+ -->
+<!--   annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) + -->
+
+<!--   coord_sf(xlim = c(139.5, 140.5), ylim = c(-66.8, -66.4)) + -->
+<!--   facet_wrap(~month_label) + -->
+<!--   theme_minimal() + -->
+<!--   labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "- Light values at 4 m deep by month")) -->
+
+<!-- ``` -->
+
+<!-- ## CHLA map with all individuals (SIC, Fast ice, ice shelf) -->
+<!-- ```{r} -->
+<!-- # df_deployment_data <- readRDS(RDS_DEPLOYMENT_PATH) -->
+
+<!-- chla_at_4m <- light_corrected_log[,4] -->
+<!-- chla_at_4m <- chla_at_4m[!is.na(light_corrected_log), ] -->
+<!-- chla_at_4m$month <- format(chla_at_4m$date, "%m") -->
+
+<!-- plot_chla <- chla_at_4m[, c("date", "lon", "lat", "chla_corrected", "month")] -->
+<!-- plot_chla <- plot_chla[order(plot_chla$month), ] -->
+
+<!-- plot_chla$month_label <- format(plot_chla$date, "%Y - %B") -->
+<!-- plot_chla$month_label <- factor(plot_chla$month_label,  -->
+<!--     levels = unique(format(seq(min(plot_chla$date), max(plot_chla$date), by = "month"), "%Y - %B"))) -->
+
+<!-- # Tester la carte -->
+<!-- ggplot() + -->
+<!--   geom_spatraster_contour(data = fine_topo_spat_crop, color = "black") + -->
+<!--   #geom_spatraster_contour_text(data = fine_topo_spat_crop) + -->
+
+<!--   new_scale_fill() + -->
+<!--   geom_spatraster(data = mean_spat_crop, alpha = 0.7) + -->
+<!--   scale_fill_cmocean(name = "ice",na.value = NA) + -->
+
+<!--   new_scale_fill() + -->
+<!--   geom_raster(data = x_sub2_long_crop, aes(x = x, y = y, fill = factor(value)), alpha = 0.8, show.legend = FALSE) + -->
+<!--   scale_fill_manual(values = c( -->
+<!--   "1" = "slategray",  # continent -->
+<!--   "3" = "#A9D6E5",    # ice shelf -->
+<!--   "4" = "red"     # fast-ice -->
+<!--   ), na.value = NA) + -->
+
+<!--   new_scale_color() + -->
+<!--   geom_point(data = plot_chla, aes(x = lon, y = lat, color = chla_corrected), size = 1) + -->
+<!--   scale_color_viridis_c(limits = c(0, 15), oob = scales::squish, na.value = NA) + -->
+
+<!--   geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1)+ -->
+<!--   annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) + -->
+
+<!--   coord_sf(xlim = c(139.5, 140.5), ylim = c(-66.8, -66.4)) + -->
+<!--   facet_wrap(~month_label) + -->
+<!--   #  facet_wrap(~month_label(c("", "", ""))) -->
+<!--   theme_minimal() + -->
+<!--   labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "- Chlorophyl values at 4 m deep by month")) -->
+
+<!-- ``` -->
