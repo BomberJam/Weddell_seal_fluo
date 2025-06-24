@@ -20,7 +20,7 @@ library(ggplot2)
 ```{r}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 DATA_FOLDER <- "oceanographic_data"
-DEPLOY_FOLDER <- "wd31"
+DEPLOY_FOLDER <- "wd11"
 DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
 
 nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)

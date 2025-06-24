@@ -1,0 +1,30 @@
+---
+title: "WD11 Analysis"
+author: "Claude Cugerone"
+date: "2025-06-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Open rds files
+
+## Histogram with all individuals (light and Chla)
+
+## T/S diagram with maps
+
+## SOON : T/S diagram with water masses
+
+## Time series of all individuals
+
+## Light depth maximum + light value
+
+## Lunar package
+
+## Chla depth maximum
+
+## Total Chla per individual for all the individuals
+
+## 
