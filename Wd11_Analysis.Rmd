@@ -126,15 +126,225 @@ ggplot(combined_counts, aes(x = month_label, y = n_profiles, fill = seal_id)) +
 # TIME SERIES
 ## Time series of all individuals with map
 ```{r}
+library(gsw)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+
+# Charger les données
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+# Paramètres
+limits_list <- list(
+  "light" = c(-10, 10),
+  "chla" = c(0, 10),
+  "temp" = c(-2, 0),
+  "sal" = c(33, 35),
+  "dens" = c(26, 28)
+)
+
+depth_list <- list(
+  "light" = c(200, 0),
+  "chla" = c(200, 0),
+  "temp" = c(600, 0),
+  "sal" = c(600, 0),
+  "dens" = c(600, 0)
+)
+
+# Liste pour stocker les graphiques finaux
+all_seal_plots <- list()
+
+# Boucle sur chaque individu
+for (seal_id in unique(all_seals_data$seal_id)) {
+  data_one_seal <- all_seals_data %>% filter(seal_id == !!seal_id)
+  
+  SEAL_NAME <- seal_id
+
+# Format long
+data_long <- data_one_seal %>%
+  filter(!(is.na(light_corrected) & is.na(chla_corrected) &
+           is.na(temperature) & is.na(salinity))) %>%
+  mutate(sigma0 = gsw_sigma0(salinity, gsw_CT_from_t(salinity, temperature, 0))) %>%
+  select(date, depth, light_corrected, chla_corrected, temperature, salinity, sigma0) %>%
+  pivot_longer(cols = -c(date, depth), names_to = "variable", values_to = "value") %>%
+  mutate(variable = recode(variable,
+                           temperature = "temp",
+                           salinity = "sal",
+                           sigma0 = "dens",
+                           light_corrected = "light",
+                           chla_corrected = "chla")) %>%
+  mutate(variable = factor(variable, levels = c("light", "chla", "temp", "sal", "dens")))
+  
+  # Générer les 5 graphiques
+  plots <- data_long %>%
+    group_split(variable) %>%
+    lapply(function(df) {
+      var <- unique(df$variable)
+      lims <- limits_list[[var]]
+      depth <- depth_list[[var]]
+
+      ggplot(df, aes(x = date, y = depth, fill = value)) +
+        geom_tile() +
+        scale_y_reverse(limits = depth) +
+        scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%m-%Y") +
+        scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"),
+                             limits = lims, name = var, na.value = NA) +
+        guides(fill = guide_colorbar(barwidth = 0.5, barheight = 3)) +
+        labs(title = paste0(var, " - ", SEAL_NAME), x = "", y = "Depth (m)") +
+        theme_minimal(base_size = 9)
+    })
+  
+  # Empilement vertical des 5 variables pour ce phoque
+  all_seal_plots[[seal_id]] <- wrap_plots(plots, ncol = 1)
+}
+
+for (plot in all_seal_plots) {
+  print(plot)
+  Sys.sleep(1)
+}
 
 ```
 # LIGHT
 ## Light depth maximum + light value
 ```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+# Charger les données
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+# Préparation : pour chaque seal et date, on calcule max lumière et profondeur de max(light)
+df_max_light <- all_seals_data %>%
+  group_by(seal_id, date = floor_date(date, unit = "hour")) %>%
+  filter(!is.na(light_corrected)) %>%
+  summarise(
+    max_light = max(light_corrected, na.rm = TRUE),
+    depth_at_max_light = depth[which.max(light_corrected)],
+    .groups = "drop"
+  )
+
+# Plot pour tous les individus
+ggplot(df_max_light, aes(x = date, y = max_light, color = depth_at_max_light)) +
+  geom_point(size = 1) +
+  facet_wrap(~ seal_id, scales = "free_x") +
+  scale_color_viridis_c(
+    option = "plasma",
+    name = "Depth (m)",
+    guide = guide_colorbar(
+      barwidth = 0.5,        # réduit la largeur
+      barheight = 5,         # ajuste la hauteur (selon orientation)
+      ticks.linewidth = 0.5,
+      label.theme = element_text(size = 8)
+    )) +
+  scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%m-%Y") +
+  labs(
+    title = "Max(light) per profile & associated depth",
+    x = "",
+    y = "max(light) (µmol/m²/s)"
+  ) +
+  theme_minimal() +
+  theme(
+  plot.margin = margin(20, 20, 20, 20),       # marge top, right, bottom, left en pts
+  panel.spacing = unit(1, "cm"),              # espace entre facettes (internes)
+  axis.text.x = element_text(angle = 45, hjust = 1)
+)
 
 ```
 ## Lunar package
 ```{r}
+library(dplyr)
+library(lubridate)
+library(oce)
+library(lunar)
+library(ggplot2)
+library(scales)
+
+# Charger les données
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+# seuil "c'est la nuit"
+solar_threshold <- -12
+
+# Fonction pour calculer la moyenne de lumière dans un intervalle
+simple_light_avg <- function(depths, lights, min_depth, max_depth) {
+  idx <- which(depths >= min_depth & depths <= max_depth)
+  mean(lights[idx], na.rm = TRUE)
+}
+
+# Traitement par seal_id
+df_solar <- all_seals_data %>%
+  group_by(seal_id, date = floor_date(date, unit = "hour")) %>%  
+  summarise(
+    lon = mean(lon, na.rm = TRUE),
+    lat = mean(lat, na.rm = TRUE),
+    light_surf = simple_light_avg(depth, light_corrected, 4, 10),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    lat_bin = floor(lat * 20) / 20,
+    lat_bin_label = factor(paste0("[", lat_bin, "°, ", lat_bin + 0.05, "°[")),
+    solar_angle = sunAngle(date, lon, lat)$altitude,
+    period = case_when(
+      solar_angle >= 0 ~ "Day",
+      solar_angle < 0 & solar_angle > solar_threshold ~ "Twilight",
+      solar_angle <= solar_threshold ~ "Night"
+    ),
+    lunar_phase = lunar.phase(date, shift = 12, name = TRUE)
+  )
+
+# Extraire les dates de pleine lune
+full_moon_dates <- df_solar %>%
+  filter(lunar_phase == "Full") %>%
+  mutate(date_only = as.Date(date)) %>%
+  distinct(date_only) %>%
+  pull(date_only) %>%
+  as.POSIXct(tz = "UTC")
+
+seal_ids <- unique(df_solar$seal_id)
+
+# Palette douce pour les périodes
+period_colors <- c("Day" = "#E69F00",      
+                   "Twilight" = "#56B4E9", 
+                   "Night" = "#1064FF")   
+
+for (seal in seal_ids) {
+  df_plot <- df_solar %>% filter(seal_id == seal)
+  
+  # Créer un dataframe long avec variable et valeur, pour faire un seul geom_point()
+  df_long <- df_plot %>%
+    select(date, period, light_surf, solar_angle) %>%
+    pivot_longer(cols = c(light_surf, solar_angle), names_to = "variable", values_to = "value") %>%
+    mutate(
+      variable = recode(variable,
+                        light_surf = "Light",
+                        solar_angle = "Solar Angle")
+    )
+  
+  # Vérifie qu'il y a assez de données
+  if (sum(!is.na(df_long$value)) >= 2) {
+    p <- ggplot(df_long, aes(x = date, y = value, color = period, shape = variable)) +
+      geom_point(size = 1.5) +
+      geom_vline(xintercept = full_moon_dates, linetype = "dashed", color = "grey40") +
+      scale_color_manual(values = period_colors, name = "Period") +
+      scale_shape_manual(values = c("Light" = 16, "Solar Angle" = 4), name = "Variable") +
+      scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%m-%Y") +
+      labs(
+        title = paste("Light Surface and Solar Angle -", seal),
+        y = "Value",
+        x = ""
+      ) +
+      theme_minimal(base_size = 14) +
+      theme(legend.position = "bottom") + 
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    print(p)
+  } else {
+    message("Pas assez de données pour tracer ", seal)
+  }
+}
+
+
 
 ```
 # CHLA
@@ -157,7 +367,7 @@ df_max <- df_long %>%
   mutate(date_simple = as.Date(date_simple)) # on remet au format Date...
 
 ggplot(df_max, aes(x = date_simple, y = depth, color = seal_id)) +
-  geom_point(shape = 19, alpha = 0.7) +
+  geom_point(shape = 19, size= 0.5) +
   geom_smooth(method = "loess", formula = y ~ x, se = FALSE, linewidth = 0.7, aes(group = seal_id)) +
   scale_y_reverse() +
   labs(
@@ -195,7 +405,6 @@ df_sum <- df_long %>%
 ggplot(df_sum, aes(x = date_simple, y = total_chla, color = seal_id)) +
   geom_point(shape = 19, alpha = 0.7) +
   geom_smooth(method = "loess", formula = y ~ x, se = FALSE, linewidth = 0.7, aes(group = seal_id)) +
-  scale_y_reverse() +
   labs(
     x = "",
     y = expression(paste(Sigma, " Chl-a (mg.m"^{-3},")")),
@@ -211,19 +420,188 @@ ggplot(df_sum, aes(x = date_simple, y = total_chla, color = seal_id)) +
 ```
 # MAPS
 ## Crops
-
+```{r}
+library(raster)
+# C'est la taille de la carte que l'on souhaite
+# crop <- c(min(lon), max(lon), min(lat), max(lat))
+crop <- c(138, 145, -67, -66.5)
+ext_crop <- extent(crop)
+```
 ## Bathy
+```{r}
+fine_topo <- raster(BATHY_PATH_FINE)
+fine_topo[fine_topo >=0] <- NA
+fine_topo_spat <- terra::rast(fine_topo)
 
+large_topo <- raster(BATHY_PATH_LARGE)
+large_topo[large_topo >=0] <-NA
+large_topo_spat <- terra::rast(large_topo)
+
+# Crop raster
+fine_topo_spat_crop <- crop(fine_topo_spat, ext_crop)
+large_topo_spat_crop <- crop(large_topo_spat, ext_crop)
+```
 ## Land fast-ice / ice-shelf 
 ```{r}
+library(terra) 
+
+# Charger les données
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+ex <- c(-2691055, 2933945, -2390156, 2309844)
+
+fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
+set.ext(fast_ice_raster, ext(ex))
+set.crs(fast_ice_raster, crs(prj))
+
+points <- cbind(lon = c(crop[1], crop[2]), lat = c(crop[3], crop[4]))
+prjpoints <- project(points, to = prj, from = "EPSG:4326")
+new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
+new_r=crop(fast_ice_raster,new_ex)
+
+# temps du raster
+raster_time <- time(fast_ice_raster)  
+# temps de l'individu
+date_min <- min(all_seals_data$date_simple, na.rm = TRUE)
+date_max <- max(all_seals_data$date_simple, na.rm = TRUE)
+# Trouve les indices dans le raster correspondant aux dates de l'individu
+time_index <- which(raster_time >= date_min & raster_time <= date_max)
+
+x_sub <- subset(new_r, time_index)
+```
+### Removing values from the raster we don't want
+```{r fast_ice_processing}
+library(terra);
+library(tidyr);
+library(lubridate);
+library(dplyr);
+
+x_sub2= project(x_sub, crs(large_topo_spat_crop), 
+                res = res(large_topo_spat_crop)) 
+
+names(x_sub2) <- raster_time[time_index]
+
+#description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
+x_sub2=round(x_sub2)
+
+x_sub2_df <- as.data.frame(x_sub2, xy = TRUE)
+x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with("2019"), names_to = "date_simple", values_to = "value")%>%
+  mutate(
+    month_date = ymd(date_simple),
+    month_label = format(month_date, "%Y - %B")
+  )
+
+# Crop dataset fast-ice ice shelf continent 
+x_sub2_long_crop <- x_sub2_long %>%
+  dplyr::filter(x >= crop[1], x <= crop[2],
+                y >= crop[3], y <= crop[4])
 
 ```
+
 ## SIC
 ```{r}
+library(raster)    
+library(stringr)
+library(terra) 
+
+wgs <- "+proj=longlat +ellps=WGS84"
+all_files <- list.files(AMSR_FOLDER_PATH, full.names = TRUE)
+
+target_year_months <- format(raster_time[time_index], "%Y%m") # "2019-05"
+
+list_SIC <- lapply(target_year_months, function(m) {
+  
+  # Sélection des fichiers du mois
+  selected_files <- all_files[str_detect(all_files, paste0("s3125-", m))]
+
+  # Charger, nettoyer et empiler
+  raster_list <- lapply(selected_files, function(f) {
+    r <- raster(f)
+    r[r > 100] <- NA_real_
+    r
+  })
+  
+  raster_stack <- stack(raster_list)
+  ref_raster <- raster_list[[1]]
+  
+  # Reprojeter les rasters dans WGS84 AVANT de cropper
+  raster_stack_wgs <- projectRaster(raster_stack, crs = wgs)
+
+  # Faire le crop en WGS84 (ext_crop doit être aussi en WGS84)
+  boxext <- extent(ext_crop)
+  raster_cropped <- crop(raster_stack_wgs, boxext)
+
+  # Statistiques
+  mean_r <- calc(raster_cropped, mean, na.rm = TRUE)
+  # median_r <- calc(raster_cropped, median, na.rm = TRUE)
+  # sd_r <- calc(raster_cropped, sd, na.rm = TRUE)
+  
+  names(mean_r) <- paste0("mean_", m)
+  # names(median_r) <- paste0("median_", m)
+  # names(sd_r) <- paste0("sd_", m)
+  
+  # Projection
+  mean_r <- projectRaster(mean_r, crs = wgs)
+  # median_r <- projectRaster(median_r, crs = wgs)
+  # sd_r <- projectRaster(sd_r, crs = wgs)
+  
+  # Création de la date et du nom lisible
+  date_obj <- as.Date(paste0(m, "01"), format = "%Y%m%d")
+  formatted_title <- format(date_obj, "%Y - %B")
+  
+  # Retourne les couches + date propre
+  list(
+    month_label = formatted_title,
+    date = date_obj,
+    mean = rast(mean_r),
+    # median = rast(median_r),
+    # sd = rast(sd_r)
+  )
+})
+
+df_SIC <- do.call(rbind, lapply(list_SIC, function(entry) {
+  s <- entry$mean # c(entry$mean, entry$median, entry$sd)
+  names(s) <- "mean" #c("mean", "median", "sd")
+  
+  df <- as.data.frame(s, xy = TRUE)
+  df$month_label <- entry$month_label
+  df$Date <- entry$date
+  
+  df
+}))
 
 ```
 ## Light map
 ```{r}
+library(dplyr)
+
+light_at_4m <- light_at_4m %>%
+  mutate(date_label = format(date, "%m-%Y"))
+
+ggplot() +
+  geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
+  scale_fill_cmocean(name = "ice", na.value = NA) +
+
+  new_scale_fill() +
+  geom_raster(data = x_sub2_long_crop, aes(x = x, y = y, fill = factor(value)), alpha = 0.8, show.legend = FALSE) +
+  scale_fill_manual(values = c(
+    "1" = "slategray",
+    "3" = "#A9D6E5",
+    "4" = "#A9D6E5"
+  ), na.value = NA) +
+
+  new_scale_color() +
+
+  # Affichage des dates au lieu de la couleur
+  geom_text(data = light_at_4m, aes(x = lon, y = lat, label = date_label), size = 3, color = "black") +
+
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1) +
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +
+
+  facet_wrap(~month_label) +
+  theme_minimal() +
+  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "- Dates at 4 m deep by month"))
 
 ```
 ## Light map zooms
@@ -402,7 +780,7 @@ for (seal in seal_ids) {
       mtext(bin_name, side = 3, line = 2, at = par("usr")[1] + 0.5 * diff(par("usr")[1:2]), cex = 1.1)
     }
     
-    # Ajouter barre de couleur uniquement sur la dernière colonne et dernière ligne
+    # Ajouter colorbar sur la dernière colonne et dernière ligne
     if (seal == seal_ids[n_row] && bin_name == names(depth_bins)[n_col]) {
       tick_vals <- seq(0, max_days, length.out = 5)
       tick_labels <- format(start_time + tick_vals * 86400, "%Y-%m")
