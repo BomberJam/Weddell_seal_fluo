@@ -9,22 +9,453 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# GLOBAL VARIABLES
+```{r Variables}
+ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+
+DATA_FOLDER_CORRECTED <- "oceanographic_data_corrected"
+DEPLOY_FOLDER <- "wd11" # Lignes à modifier pour changer de dépoliement...
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-913-18") # ...ou d'individu
+SEAL_FILE <- paste0(SEAL_NAME, "_data.rds")
+RDS_SEAL_PATH <- file.path(ROOT_PROJ,DATA_FOLDER_CORRECTED, DEPLOY_FOLDER)
+
+DEPLOYMENT_FILE <- paste0("combined_",DEPLOY_FOLDER,".rds")
+RDS_DEPLOYMENT_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, DEPLOYMENT_FILE)
+
+# Pour les cartes
+BATHY_FOLDER <- "bathy"
+FINE_TOPO_FILE <- "gvdem100v3/w001001.adf"
+LARGE_TOPO_FILE <- "gebco_2023_n-50.0_s-79.0_w90.0_e180.0.tif"
+BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
+BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
+
+FAST_ICE_FOLDER <- "fast_ice"
+FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
+FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
+
+AMSR_FOLDER <- "amsr2"
+AMSR_FOLDER_YEAR <- "2019"
+AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
+AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
+AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
+
+```
+
 ## Open rds files
+```{r}
+# fichier combinant tous les individus de wd11 2019
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
 
+# Lister les fichiers .rds du dossier
+rds_files <- list.files(RDS_SEAL_PATH, pattern = "_data\\.rds$", full.names = TRUE)
+
+# Créer une liste nommée avec les données de chaque fichier
+seals_data_list <- setNames(
+  lapply(rds_files, readRDS),
+  nm = gsub("_data\\.rds$", "", basename(rds_files))
+)
+
+# on appelle les individus de cette façon : seal_data_list[["wd11-913-18"]]
+
+```
+#HISTO
 ## Histogram with all individuals (light and Chla)
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
 
+# Charger les données
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+# Préparer les données avec mois
+all_seals_data <- all_seals_data %>%
+  mutate(
+    month = floor_date(date, "month")
+  )
+
+# Résumer pour light_raw
+light_counts <- all_seals_data %>%
+  filter(!is.na(light_raw)) %>%
+  group_by(seal_id, month, profile_id) %>%
+  summarise(.groups = "drop") %>%
+  group_by(seal_id, month) %>%
+  summarise(n_profiles = n(), .groups = "drop") %>%
+  mutate(type = "Light")
+
+# Résumer pour chla_raw
+chla_counts <- all_seals_data %>%
+  filter(!is.na(chla_raw)) %>%
+  group_by(seal_id, month, profile_id) %>%
+  summarise(.groups = "drop") %>%
+  group_by(seal_id, month) %>%
+  summarise(n_profiles = n(), .groups = "drop") %>%
+  mutate(type = "Fluorescence")
+
+# Combiner les deux
+combined_counts <- bind_rows(light_counts, chla_counts)
+# pour mettre les facets dans un ordre souhaité
+combined_counts <- combined_counts %>%
+  mutate(type = factor(type, levels = c("Light", "Fluorescence")))
+
+# Créer une étiquette propre pour l’axe x
+combined_counts <- combined_counts %>%
+  mutate(
+    month_label = format(month, "%b %Y"),
+    month_label = factor(month_label, levels = unique(format(sort(unique(month)), "%b %Y")))
+  )
+
+# Plot : 1 facet pour Light, 1 pour Fluorescence, individus en couleur
+ggplot(combined_counts, aes(x = month_label, y = n_profiles, fill = seal_id)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~type, ncol = 1, scales = "free_y") +
+  theme_minimal() +
+  labs(
+    title = "Number of profiles (light and fluo) per individual per month",
+    x = "",
+    y = "Number of profiles",
+    fill = "Seal"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set3")
+
+
+
+
+```
+# TIME SERIES
+## Time series of all individuals with map
+```{r}
+
+```
+# LIGHT
+## Light depth maximum + light value
+```{r}
+
+```
+## Lunar package
+```{r}
+
+```
+# CHLA
+## Chla depth maximum
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Charger les données
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+df_long <- all_seals_data %>%
+  filter(!is.na(chla_corrected)) %>%
+  select(seal_id, profile_id, depth, chla_corrected, date_simple)
+
+df_max <- df_long %>%
+  group_by(seal_id, profile_id) %>%
+  slice_max(chla_corrected, n = 1, with_ties = FALSE) %>%  # prendre la ligne avec max(chla_corrected)
+  ungroup() %>%
+  mutate(date_simple = as.Date(date_simple)) # on remet au format Date...
+
+ggplot(df_max, aes(x = date_simple, y = depth, color = seal_id)) +
+  geom_point(shape = 19, alpha = 0.7) +
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, linewidth = 0.7, aes(group = seal_id)) +
+  scale_y_reverse() +
+  labs(
+    x = "",
+    y = "Depth",
+    color = "Seal ID",
+    title = "Max Chl-a per Profile over Time"
+  ) +
+    scale_x_date(
+    date_breaks = "1 week",
+    date_labels = "%Y-%m-%d"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+## Total Chla per individual for all the individuals
+```{r}
+
+# Charger les données
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+df_long <- all_seals_data %>%
+  filter(!is.na(chla_corrected)) %>%
+  select(seal_id, profile_id, depth, chla_corrected, date_simple)
+
+df_sum <- df_long %>%
+  group_by(seal_id, profile_id) %>%
+  summarise(
+    total_chla = sum(chla_corrected, na.rm = TRUE),
+    date_simple = first(date_simple)  # ou max(date_simple) selon ce que tu veux
+  ) %>% 
+  ungroup() %>%
+  mutate(date_simple = as.Date(date_simple))
+
+ggplot(df_sum, aes(x = date_simple, y = total_chla, color = seal_id)) +
+  geom_point(shape = 19, alpha = 0.7) +
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, linewidth = 0.7, aes(group = seal_id)) +
+  scale_y_reverse() +
+  labs(
+    x = "",
+    y = expression(paste(Sigma, " Chl-a (mg.m"^{-3},")")),
+    color = "Seal ID",
+    title = "Sum of Chl-a per Profile over Time"
+  ) +
+    scale_x_date(
+    date_breaks = "1 week",
+    date_labels = "%Y-%m-%d"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+# MAPS
+## Crops
+
+## Bathy
+
+## Land fast-ice / ice-shelf 
+```{r}
+
+```
+## SIC
+```{r}
+
+```
+## Light map
+```{r}
+
+```
+## Light map zooms
+```{r}
+
+```
+# T/S DIAGRAM
 ## T/S diagram with maps
+```{r}
+library(gsw)
+library(plot3D)
+library(dplyr)
+
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+seal_ids <- sort(unique(all_seals_data$seal_id))
+
+# Définir les bornes
+x_lim <- c(33, 35)       # salinité
+y_lim <- c(-2.2, 0)      # temperature
+start_time <- as.POSIXct("2019-02-01", tz = "UTC")
+end_time   <- as.POSIXct("2019-06-30", tz = "UTC")
+max_days <- as.numeric(difftime(end_time, start_time, units = "days"))
+
+n_col <- 2  # nombre de colonnes souhaitées
+n_row <- ceiling(length(seal_ids) / n_col)
+# mar : marges internes ; oma : marges externes (bottom, left, top, right)
+par(mfrow = c(n_row, n_col), mar = c(3, 6, 3, 6), oma = c(2, 2, 2, 2))
+
+for (seal in seal_ids) {
+  seal_data <- all_seals_data %>% filter(seal_id == seal)
+  
+  sal <- seal_data$salinity
+  temp <- seal_data$temperature
+  depth <- seal_data$depth
+  time <- seal_data$date
+  
+  valid <- !is.na(sal) & !is.na(temp) & !is.na(depth) & !is.na(time) &
+           time >= start_time & time <= end_time
+  if (sum(valid) == 0) next
+  
+  sal <- sal[valid]
+  temp <- temp[valid]
+  depth <- depth[valid]
+  time <- time[valid]
+  
+  SA <- sal
+  CT <- gsw_CT_from_t(SA, temp, p = depth)
+  time_numeric <- as.numeric(difftime(time, start_time, units = "days"))
+  
+  # Grille pour les isopycnes
+  sa_grid <- seq(x_lim[1], x_lim[2], length.out = 100)
+  ct_grid <- seq(y_lim[1], y_lim[2], length.out = 100)
+  sigma.c <- outer(sa_grid, ct_grid, FUN = function(S, T) gsw_sigma0(S, T))
+  
+  # Diagramme T/S
+  contour2D(
+    x = sa_grid, y = ct_grid, z = sigma.c,
+    xlim = x_lim, ylim = y_lim,
+    main = paste0("T/S - ", seal),
+    col = "black", lwd = 1.5,
+    xlab = expression("Salinity"),
+    ylab = expression("T ("*~degree*C*")")
+  )
+  
+  scatter2D(SA, CT, colvar = time_numeric, pch = 16, cex = 0.5,
+            colkey = FALSE, add = TRUE, clim = c(0, max_days))
+  
+  tick_vals <- seq(0, max_days, length.out = 5)
+  tick_labels <- format(start_time + tick_vals * 86400, "%Y-%m")
+  
+  colkey(
+    clim = c(0, max_days), dist = 0.005, side = 4, add = TRUE,
+    clab = "", col.clab = "black", side.clab = 4, line.clab = 2.5,
+    length = 1, width = 0.8, col.axis = "black", col.ticks = "black",
+    cex.axis = 0.8, at = tick_vals, labels = tick_labels
+  )
+}
+
+
+```
+## T/ S diagram with depth range
+```{r}
+library(gsw)
+library(plot3D)
+library(dplyr)
+
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+seal_ids <- sort(unique(all_seals_data$seal_id))
+
+# Bornes fixes
+x_lim <- c(33, 35)       # salinité
+y_lim <- c(-2.2, 0)      # température conservative
+start_time <- as.POSIXct("2019-02-01", tz = "UTC")
+end_time   <- as.POSIXct("2019-06-30", tz = "UTC")
+max_days <- as.numeric(difftime(end_time, start_time, units = "days"))
+
+# Définir les tranches de profondeur
+depth_bins <- list(
+  "0-50 m" = c(0, 50),
+  "50-100 m" = c(50, 100),
+  "100-150 m" = c(100, 150),
+  "150-200 m" = c(150, 200)
+)
+
+n_row <- length(seal_ids)
+n_col <- length(depth_bins)
+
+# Ajustement de la grille de tracé (une ligne par individu, 4 colonnes)
+par(mfrow = c(n_row, n_col), mar = c(2, 2, 2, 2), oma = c(2, 2, 2, 2))
+
+for (seal in seal_ids) {
+  seal_data <- all_seals_data %>% filter(seal_id == seal)
+  
+  sal <- seal_data$salinity
+  temp <- seal_data$temperature
+  depth <- seal_data$depth
+  time <- seal_data$date
+  
+  valid <- !is.na(sal) & !is.na(temp) & !is.na(depth) & !is.na(time) &
+           time >= start_time & time <= end_time
+  if (sum(valid) == 0) {
+    # Pour chaque profondeur, on trace une zone vide pour garder la grille
+    for (bin_name in names(depth_bins)) {
+      plot.new()
+      box()
+    }
+    next
+  }
+  
+  sal <- sal[valid]
+  temp <- temp[valid]
+  depth <- depth[valid]
+  time <- time[valid]
+  
+  SA_all <- sal
+  CT_all <- gsw_CT_from_t(SA_all, temp, p = depth)
+  time_numeric_all <- as.numeric(difftime(time, start_time, units = "days"))
+  
+  for (bin_name in names(depth_bins)) {
+    range <- depth_bins[[bin_name]]
+    in_bin <- depth >= range[1] & depth < range[2]
+    
+    if (sum(in_bin) == 0) {
+      # Zone vide si pas de données dans cette tranche
+      plot.new()
+      box()
+      next
+    }
+    
+    SA <- SA_all[in_bin]
+    CT <- CT_all[in_bin]
+    time_numeric <- time_numeric_all[in_bin]
+    
+    # Grille isopycnes
+    sa_grid <- seq(x_lim[1], x_lim[2], length.out = 100)
+    ct_grid <- seq(y_lim[1], y_lim[2], length.out = 100)
+    sigma.c <- outer(sa_grid, ct_grid, FUN = function(S, T) gsw_sigma0(S, T))
+    
+    # Tracer diagramme T/S
+    contour2D(
+      x = sa_grid, y = ct_grid, z = sigma.c,
+      xlim = x_lim, ylim = y_lim,
+      col = "black", lwd = 1.5,
+      xlab = ifelse(bin_name == names(depth_bins)[1], expression("Salinity"), ""),
+      ylab = ifelse(bin_name == names(depth_bins)[1], expression("T ("*~degree*C*")"), ""),
+      main = ifelse(bin_name == names(depth_bins)[1], seal, "")  # titre par ligne (col 1)
+    )
+    
+    scatter2D(SA, CT, colvar = time_numeric, pch = 16, cex = 0.5,
+              colkey = FALSE, add = TRUE, clim = c(0, max_days))
+    
+    # Ajouter titre de colonne (tranche profondeur) en haut de la première ligne
+    if (seal == seal_ids[1]) {
+      mtext(bin_name, side = 3, line = 2, at = par("usr")[1] + 0.5 * diff(par("usr")[1:2]), cex = 1.1)
+    }
+    
+    # Ajouter barre de couleur uniquement sur la dernière colonne et dernière ligne
+    if (seal == seal_ids[n_row] && bin_name == names(depth_bins)[n_col]) {
+      tick_vals <- seq(0, max_days, length.out = 5)
+      tick_labels <- format(start_time + tick_vals * 86400, "%Y-%m")
+      colkey(
+        clim = c(0, max_days), dist = 0.005, side = 4, add = TRUE,
+        clab = "", col.clab = "black", side.clab = 4, line.clab = 2.5,
+        length = 1, width = 0.8, col.axis = "black", col.ticks = "black",
+        cex.axis = 0.8, at = tick_vals, labels = tick_labels
+      )
+    }
+  }
+}
+# Titre global en haut
+#mtext("T/S Diagrams by Seal and Depth Range (Feb 2019 - Jun 2019)", outer = TRUE, cex = 1.5, line = 1)
+
+```
 
 ## SOON : T/S diagram with water masses
+```{r}
 
-## Time series of all individuals
+```
 
-## Light depth maximum + light value
+# SOON : ACP
+```{r}
+# # Exemple de jeu de données
+# data(iris)
+# X <- iris[, 1:4]  # On ne garde que les variables numériques
+# 
+# # Centrage-réduction + ACP
+# acp_result <- prcomp(X, scale. = TRUE)
+# 
+# # Résumé des résultats
+# summary(acp_result)
+# 
+# # Affichage des composantes principales
+# acp_result$x[1:5, ]  # Coordonnées des individus
+# 
+# # Affichage des contributions des variables
+# acp_result$rotation  # Coefficients des variables sur chaque axe
+# 
+# # Biplot de l'ACP
+# biplot(acp_result, scale = 0)
+# 
+# # ou ggplot
+# library(ggplot2)
+# 
+# # Ajouter les deux premières composantes à iris
+# pca_df <- data.frame(acp_result$x, Species = iris$Species)
+# 
+# # Graphe
+# ggplot(pca_df, aes(PC1, PC2, color = Species)) +
+#   geom_point(size = 2) +
+#   labs(title = "ACP - iris dataset") +
+#   theme_minimal()
 
-## Lunar package
-
-## Chla depth maximum
-
-## Total Chla per individual for all the individuals
-
-## 
+```

@@ -1227,9 +1227,16 @@ list_SIC <- lapply(target_year_months, function(m) {
   raster_stack <- stack(raster_list)
   ref_raster <- raster_list[[1]]
   
+  # Reprojeter les rasters dans WGS84 AVANT de cropper
+  raster_stack_wgs <- projectRaster(raster_stack, crs = wgs)
+
+  # Faire le crop en WGS84 (ext_crop doit être aussi en WGS84)
+  boxext <- extent(ext_crop)
+  raster_cropped <- crop(raster_stack_wgs, boxext)
+  
   # Recadrage
-  boxext <- extent(projectExtent(raster(ext_crop, crs = wgs), projection(ref_raster)))
-  raster_cropped <- crop(raster_stack, boxext)
+  # boxext <- extent(projectExtent(raster(ext_crop, crs = wgs), projection(ref_raster)))
+  # raster_cropped <- crop(raster_stack, boxext)
   
   # Statistiques
   mean_r <- calc(raster_cropped, mean, na.rm = TRUE)
@@ -1274,23 +1281,9 @@ df_SIC <- do.call(rbind, lapply(list_SIC, function(entry) {
 ### Plotting Mean/sd/median of SIC raster map
 ```{r}
 idMap <- 1
-
-cropped_SIC_mean <- list_SIC[[idMap]]$mean %>%
-  dplyr::filter(x >= crop[1], x <= crop[2],
-                y >= crop[3], y <= crop[4])
-
-cropped_SIC_median <- list_SIC[[idMap]]$median %>%
-  dplyr::filter(x >= crop[1], x <= crop[2],
-                y >= crop[3], y <= crop[4])
-
-cropped_SIC_sd <- list_SIC[[idMap]]$sd %>%
-  dplyr::filter(x >= crop[1], x <= crop[2],
-                y >= crop[3], y <= crop[4])
-
-
-plot(cropped_SIC_mean, main = paste0("SIC Mean (", list_SIC[[idMap]]$month_label,")"))
-plot(cropped_SIC[[idMap]]$median, main = paste0("SIC Median (", list_SIC[[idMap]]$month_label,")"))
-plot(cropped_SIC[[idMap]]$sd, main = paste0("SIC SD (", list_SIC[[idMap]]$month_label,")"))
+plot(list_SIC[[idMap]]$mean, main = paste0("SIC Mean (", list_SIC[[idMap]]$month_label,")"))
+plot(list_SIC[[idMap]]$median, main = paste0("SIC Median (", list_SIC[[idMap]]$month_label,")"))
+plot(list_SIC[[idMap]]$sd, main = paste0("SIC SD (", list_SIC[[idMap]]$month_label,")"))
 
 ```
 
