@@ -46,16 +46,9 @@ LAT_MIN <- -68
 LAT_MAX <- -65
 ```
 
-<h2>Paths and NetCDF extraction</h2>
-<h4>Paths</h4>
+## PATHS
 ```{r paths}
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
-
-# DATA_FOLDER <- "oceanographic_data"
-# DEPLOY_FOLDER <- "wd11"
-# SEAL_NAME <- paste0(DEPLOY_FOLDER,"-682-17")
-# SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
-# NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 
 DATA_FOLDER <- "oceanographic_data_corrected"
 DEPLOY_FOLDER <- "wd11"
@@ -83,8 +76,7 @@ AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
 AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 ```
 
-<h2>MAPS</h2>
-<h4>Reading RDS</h4>
+## RDS Reading
 ```{r}
 # RDS qui contient les valeurs de lumieres et chla corrigées par le script Data_L_F_corrected
 df_data_corrected<- readRDS(RDS_PATH)
@@ -170,27 +162,9 @@ plot(x_sub2, legend = FALSE)
 #description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
 x_sub2=round(x_sub2)
 
-# continent <- x_sub2
-# continent[x_sub2 != 1] <- NA
-# continent[x_sub2 == 1] <- 1
-# 
-# glacier <- x_sub2
-# glacier[x_sub2 != 4] <- NA
-# glacier[x_sub2 == 4] <- 1
-# 
-# ice_shelf <- x_sub2
-# ice_shelf[x_sub2 != 3] <- NA
-# ice_shelf[x_sub2 == 3] <- 1
-
 x_sub2_df <- as.data.frame(x_sub2, xy = TRUE)
 x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with("2019"), names_to = "month_label", values_to = "value")
 x_sub2_long_select <- x_sub2_long # %>% filter(value == c(1,3,4))
-
-# x_sub2_wide <- x_sub2_long %>%
-#   pivot_wider(names_from = month, values_from = value)
-# 
-# x_sub2_wide_filtered <- x_sub2_wide %>%
-#   filter(if_any(starts_with("2019"), ~ .x %in% c(1,3,4)))
 
 ```
 
