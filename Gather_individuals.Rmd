@@ -9,12 +9,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Regroupe les wd ensemble
 ```{r}
 # Regroupe les individus d'un déploiement rds "combined_wdxx.rds"
 
 library(dplyr)
 
-deployment <- "wd11"
+deployment <- "wd20"
 input_dir <- paste0("oceanographic_data_corrected/", deployment)
 output_path <- file.path(input_dir, paste0("combined_", deployment, ".rds"))
 
@@ -25,13 +26,14 @@ files <- list.files(path = input_dir, pattern = "_data\\.rds$", full.names = TRU
 combined_data <- files %>%
   lapply(readRDS) %>%
   bind_rows() %>%
-  arrange(SEAL_NAME, profile_id, date) # trier par ind, puis profile, puis date.
+  arrange(seal_id, profile_id, date) # trier par ind, puis profile, puis date.
 
 # Sauvegarder
 saveRDS(combined_data, output_path)
 
 ```
 
+# Creer le deploiement global
 ```{r}
 # Regroupe tous les deploiements pour avoir tous les individus dans un rds
 
@@ -55,7 +57,7 @@ saveRDS(all_data, file.path(base_dir, "all_deployment.rds"))
 
 ```
 
-JUSTE POUR REGARDER LES DONNEES
+# Visualisation donnees
 ```{r}
 DATA_FOLDER <- "oceanographic_data_corrected"
 DEPLOY_FOLDER <- "wd11"
@@ -79,4 +81,20 @@ profile_107 <- deployment_profiles[deployment_profiles$profile_id == 107, ]
 
 ```
 
+# Suppression profils Temp trop haute
+```{r}
+library(dplyr)
+
+df <- readRDS("/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo/oceanographic_data_corrected/all_deployment.rds")
+
+seuil <- 4  # remplace par la valeur souhaitée
+valeurs_sup <- unique(df$temperature[df$temperature > seuil])
+
+df_filtered <- df[df$temperature <= seuil, ]
+
+nb_suppr <- nrow(df) - nrow(df_filtered)
+
+saveRDS(df_filtered, "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo/oceanographic_data_corrected/all_deployment_filtered.rds")
+
+```
 

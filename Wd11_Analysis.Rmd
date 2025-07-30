@@ -11,13 +11,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # GLOBAL VARIABLES
 ```{r Variables}
+# Si besoin de changer de déploiement, Ctrl+F sur SealOfApproval
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER_CORRECTED <- "oceanographic_data_corrected"
-DEPLOY_FOLDER <- "wd11" # Lignes à modifier pour changer de dépoliement...
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-913-18") # ...ou d'individu
-SEAL_FILE <- paste0(SEAL_NAME, "_data.rds")
-RDS_SEAL_PATH <- file.path(ROOT_PROJ,DATA_FOLDER_CORRECTED, DEPLOY_FOLDER)
+DEPLOY_FOLDER <- "wd12" # Lignes à modifier pour changer de dépoliement... SealOfApproval
 
 DEPLOYMENT_FILE <- paste0("combined_",DEPLOY_FOLDER,".rds")
 RDS_DEPLOYMENT_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, DEPLOYMENT_FILE)
@@ -30,34 +28,14 @@ BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
 BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
 
 FAST_ICE_FOLDER <- "fast_ice"
-FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
+FAST_ICE_FILE <- "mertz_sara_akiko_20.nc" # Lignes à modifier pour changer de deployment SealOfApproval
 FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
 
 AMSR_FOLDER <- "amsr2"
-AMSR_FOLDER_YEAR <- "2019"
+AMSR_FOLDER_YEAR <- "2020" # Lignes à modifier pour changer de deployment SealOfApproval
 AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
-AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
-AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
-
 ```
 
-## Open rds files (just a reminder)
-```{r}
-# fichier combinant tous les individus de wd11 2019
-all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
-
-# Lister les fichiers .rds du dossier
-rds_files <- list.files(RDS_SEAL_PATH, pattern = "_data\\.rds$", full.names = TRUE)
-
-# Créer une liste nommée avec les données de chaque fichier
-seals_data_list <- setNames(
-  lapply(rds_files, readRDS),
-  nm = gsub("_data\\.rds$", "", basename(rds_files))
-)
-
-# on appelle les individus de cette façon : seal_data_list[["wd11-913-18"]]
-
-```
 #HISTO
 ## Histogram with all individuals (light and Chla)
 ```{r}
@@ -166,7 +144,7 @@ data_long <- data_one_seal %>%
   filter(!(is.na(light_corrected) & is.na(chla_corrected) &
            is.na(temperature) & is.na(salinity))) %>%
   mutate(sigma0 = gsw_sigma0(salinity, gsw_CT_from_t(salinity, temperature, 0))) %>%
-  select(date, depth, light_corrected, chla_corrected, temperature, salinity, sigma0) %>%
+  dplyr::select(date, depth, light_corrected, chla_corrected, temperature, salinity, sigma0) %>%
   pivot_longer(cols = -c(date, depth), names_to = "variable", values_to = "value") %>%
   mutate(variable = recode(variable,
                            temperature = "temp",
@@ -187,7 +165,7 @@ data_long <- data_one_seal %>%
       ggplot(df, aes(x = date, y = depth, fill = value)) +
         geom_tile() +
         scale_y_reverse(limits = depth) +
-        scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%m-%Y") +
+        scale_x_datetime(date_breaks = "1 month", date_labels = "%b-%Y") +
         scale_fill_gradientn(colors = c("blue", "darkgreen", "greenyellow", "red"),
                              limits = lims, name = var, na.value = NA) +
         guides(fill = guide_colorbar(barwidth = 0.5, barheight = 3)) +
@@ -238,7 +216,7 @@ ggplot(df_max_light, aes(x = date, y = depth_at_max_light, color = max_light)) +
       ticks.linewidth = 0.5,
       label.theme = element_text(size = 8)
     )) +
-  scale_x_datetime(date_breaks = "2 weeks", date_labels = "%d-%m-%Y") +
+  scale_x_datetime(date_breaks = "3 weeks", date_labels = "%d-%m-%Y") +
   scale_y_reverse()+
   labs(
     title = "Max(light) per profile & associated depth",
@@ -316,7 +294,7 @@ for (seal in seal_ids) {
   
   # Créer un dataframe long avec variable et valeur, pour faire un seul geom_point()
   df_long <- df_plot %>%
-    select(date, period, light_surf, solar_angle) %>%
+    dplyr::select(date, period, light_surf, solar_angle) %>%
     pivot_longer(cols = c(light_surf, solar_angle), names_to = "variable", values_to = "value") %>%
     mutate(
       variable = recode(variable,
@@ -361,7 +339,7 @@ all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
 
 # Préparer les données
 df <- all_seals_data %>%
-  select(profile_id, seal_id, date_simple, depth, light = light_corrected, light_raw, MLD) %>%
+  dplyr::select(profile_id, seal_id, date_simple, depth, light = light_corrected, light_raw, MLD) %>%
   filter(!is.na(light) & !is.na(depth))
 
 # Déterminer les ranges
@@ -418,7 +396,7 @@ all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
 
 df_long <- all_seals_data %>%
   filter(!is.na(chla_corrected)) %>%
-  select(seal_id, profile_id, depth, chla_corrected, date_simple)
+  dplyr::select(seal_id, profile_id, depth, chla_corrected, date_simple)
 
 df_max <- df_long %>%
   group_by(seal_id, profile_id) %>%
@@ -437,7 +415,7 @@ ggplot(df_max, aes(x = date_simple, y = depth, color = seal_id)) +
     title = "Max Chl-a per Profile over Time"
   ) +
     scale_x_date(
-    date_breaks = "1 week",
+    date_breaks = "2 weeks",
     date_labels = "%Y-%m-%d"
   ) +
   theme_minimal() +
@@ -451,7 +429,7 @@ all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
 
 df_long <- all_seals_data %>%
   filter(!is.na(chla_corrected)) %>%
-  select(seal_id, profile_id, depth, chla_corrected, date_simple)
+  dplyr::select(seal_id, profile_id, depth, chla_corrected, date_simple)
 
 df_sum <- df_long %>%
   group_by(seal_id, profile_id) %>%
@@ -493,7 +471,7 @@ all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
 
 # Préparer les données
 df <- all_seals_data %>%
-  select(profile_id, seal_id, date_simple, depth, chla = chla_corrected, chla_raw, MLD) %>%
+  dplyr::select(profile_id, seal_id, date_simple, depth, chla = chla_corrected, chla_raw, MLD) %>%
   filter(!is.na(chla) & !is.na(depth))
 
 # Déterminer les ranges
@@ -552,7 +530,7 @@ all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
 
 # Préparer les données
 df <- all_seals_data %>%
-  select(depth, chla = chla_corrected, light = light_corrected, date_simple, seal_id, profile_id, MLD) %>%
+  dplyr::select(depth, chla = chla_corrected, light = light_corrected, date_simple, seal_id, profile_id, MLD) %>%
   filter(!is.na(chla) & !is.na(light) & !is.na(depth))
 
 # Déterminer les ranges communs
@@ -624,17 +602,98 @@ df %>%
 
 ```
 
+## MLD : Mixed Layer Depth
+```{r}
+library(ggplot2)
+library(dplyr)
+
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+all_seals_data <- all_seals_data %>% mutate(deployment = sub("-.*", "", seal_id))
+
+# Nettoyer et ordonner sans filtrer MLD ni QD
+data <- bind_rows(all_seals_data) %>%
+  arrange(deployment, seal_id, profile_id, date)
+
+data$date <- as.Date(data$date)
+year <- format(data$date, "%Y")
+
+# Mixed Layer Depth (MLD) plot
+ggplot(data %>% filter(!is.na(MLD)), aes(x = date, y = MLD, color = seal_id)) +
+  geom_point(shape = 20) +
+  geom_smooth(method = "loess", formula = "y ~ x", linewidth = 0.25, se = FALSE) +
+  scale_y_reverse() +
+  scale_x_date(date_labels = "%b %Y") +
+  facet_wrap(~ deployment, scales = "free_x") + 
+  labs(x = "", y = "Depth (m)", title = paste0("Mixed Layer Depth for deployment ", data$deployment, " (", year,")")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+### QD : Quenching depth </h4>
+```{r}
+# Quenching Depth (QD) plot (il faut lancer le bout de code du chunk précédent MAIS ne pas plot, le plot du MLD est long)
+ggplot(data %>% filter(!is.na(QD)), aes(x = date, y = QD, color = seal_id)) +
+  geom_point(shape = 4) +
+  geom_smooth(method = "loess", formula = "y ~ x", linewidth = 0.25, se = FALSE) +
+  scale_y_reverse() +
+  scale_x_date(date_labels = "%b %Y") +
+  facet_wrap(~ deployment, scales = "free_x") + 
+  labs(x = "", y = "Depth (m)", title = paste0("Quenching Depth for deployment ", data$deployment, " (", year,")")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Maximum depth for temp / light / chla
+```{r}
+library(dplyr)
+library(ggplot2)
+
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+
+# filtrer avec seal_id
+filtered_data <- all_seals_data %>%
+  filter(seal_id == SEAL_NAME)
+
+# Derniers points température
+last_temp <- filtered_data %>%
+  group_by(profile_id) %>%  
+  filter(!is.na(temperature)) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+
+# Derniers points lumière
+last_light <- filtered_data %>%
+  group_by(profile_id) %>%  
+  filter(!is.na(light_raw)) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+
+# Derniers points chla
+last_chla <- filtered_data %>%
+  group_by(profile_id) %>%  
+  filter(!is.na(chla_raw)) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+
+# Tracer les deux types de points
+ggplot() + 
+  geom_point(data = last_temp, aes(x = date, y = depth), color = "blue", size = 0.5) +
+  geom_point(data = last_light, aes(x = date, y = depth), color = "red", size = 0.5) +
+  geom_point(data = last_chla, aes(x = date, y = depth), color = "green", size = 0.5) +
+  scale_y_reverse() +
+  scale_x_datetime(date_labels = "%b %Y") +
+  labs(title = paste0("Maximum depth per profile - ", SEAL_NAME), x = "", y = "Depth (m)") +
+  theme_minimal()
+
+
+```
+
+
 # MAPS
-## Crops
+## DDU RDS Date
 ```{r}
 library(raster)
-# C'est la taille de la carte que l'on souhaite
-# crop <- c(min(lon), max(lon), min(lat), max(lat))
-crop <- c(138, 145, -67.5, -66.5)
-crop_fast_ice <- c(130,150,-68,-65)
-
-ext_crop <- extent(crop)
-ext_crop_fast_ice <- extent(crop_fast_ice)
 
 DDU_loc=NULL
 DDU_loc$lat = -66.66306	
@@ -642,187 +701,193 @@ DDU_loc$lon = 140.00083
 DDU_loc=as.data.frame(DDU_loc)
 
 # Charger les données
-all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
-# temps des individus
-date_min <- as.Date(min(all_seals_data$date_simple, na.rm = TRUE))
-date_max <- as.Date(max(all_seals_data$date_simple, na.rm = TRUE))
-
+#all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+# Pour savoir sur quelle date on retrouve le plus de profils
+# max_date <- names(which.max(nbfoisonvoitlesdates))
+# max_count <- max(nbfoisonvoitlesdates)
+# cat("Date la plus fréquente :", max_date, "avec", max_count, "occurrences\n")
 ```
 ## Bathy
 ```{r}
-fine_topo <- raster(BATHY_PATH_FINE)
-fine_topo_spat <- terra::rast(fine_topo)
+crop <- c(136, 146, -67.3, -65.4)
+ext_crop <- extent(crop)
 
 large_topo <- raster(BATHY_PATH_LARGE)
 large_topo_spat <- terra::rast(large_topo)
 
-# Crop raster
-fine_topo_spat_crop <- crop(fine_topo_spat, ext_crop)
-fine_topo_spat_crop[fine_topo_spat_crop >=0] <- NA
-
 large_topo_spat_crop <- crop(large_topo_spat, ext_crop)
+
 large_topo_spat_crop[large_topo_spat_crop >=0] <-NA
 
 ```
-## Land fast-ice / ice-shelf 
+## Fast-ice
 ```{r}
+library(raster)
 library(terra)
+library(dplyr)
+library(tidyr)
 library(lubridate)
+library(zoo)
 
 prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
 ex <- c(-2691055, 2933945, -2390156, 2309844)
 
-fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
-set.ext(fast_ice_raster, ext(ex))
-set.crs(fast_ice_raster, crs(prj))
+r <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
+ext(r) <- ext(ex)
+crs(r) <- prj
+# plot(r)
 
-points <- cbind(lon = c(crop_fast_ice[1], crop_fast_ice[2]), lat = c(crop_fast_ice[3], crop_fast_ice[4]))
-prjpoints <- project(points, to = prj, from = "EPSG:4326")
-new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
-new_r=crop(fast_ice_raster,new_ex)
+# define the time needed (permet de savoir quels indices mettre dans raster_range)
+all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
+raster_time <- time(r)
+date_min <- as.Date(min(all_seals_data$date_simple, na.rm = TRUE))
+date_max <- as.Date(max(all_seals_data$date_simple, na.rm = TRUE))
+raster_range <- c(1,2,3,4,5,6,7) # Lignes à modifier pour changer de deployment SealOfApproval
 
-# temps du raster
-raster_time <- time(fast_ice_raster)
+crop_bounds <- c(130, 150, -67.5, -65)
+pts <- cbind(lon = crop_bounds[c(1,2)], lat = crop_bounds[c(3,4)])
+prj_pts <- project(pts, to = prj, from = "EPSG:4326")
+ex_crop <- ext(prj_pts[2,1], prj_pts[1,1], prj_pts[2,2], prj_pts[1,2])
 
-raster_num <- as.numeric(raster_time)
-date_min_num <- as.numeric(date_min)
-date_max_num <- as.numeric(date_max)
-
-# raster_range <- which(raster_num >= date_min_num & raster_num <= date_max_num)
-# Date_kon_veut <- raster_time[raster_range]
-# trouver les indices les plus proches
-idx_min <- which.min(abs(raster_num - date_min_num))
-idx_max <- which.min(abs(raster_num - date_max_num))
-# trier par ordre croissant
-idx_range <- sort(c(idx_min, idx_max))
-# Tous les indices entre les deux
-raster_range <- idx_range[1]:idx_range[2]
-# Date_kon_veut <- raster_time[raster_range]
+new_r <- crop(r, ex_crop)
+# plot(new_r)
 
 x_sub <- subset(new_r, raster_range)
-# plot(x_sub, legend = FALSE)
-```
-### Removing values from the raster we don't want
-```{r fast_ice_processing}
-library(terra)
-library(tidyr)
-library(lubridate)
-library(dplyr)
-
-x_sub2= project(x_sub, crs(large_topo_spat_crop), 
-                res = res(large_topo_spat_crop)) 
-
-# plot(x_sub2, legend = FALSE)
-
-names(x_sub2) <- raster_time[raster_range]
+# plot(x_sub)
 
 #description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
-x_sub2=round(x_sub2)
+x_sub_clean <- classify(x_sub, cbind(from = c(0, 2, 5, 6), to = NA))
 
-x_sub2_df <- as.data.frame(x_sub2, xy = TRUE)
-x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with("2019"), names_to = "date_simple", values_to = "value")%>%
+# On projette ...
+x_sub_proj <- project(x_sub_clean, crs(large_topo_spat), res = res(large_topo_spat))
+# plot(x_sub_proj)
+
+# ... et on crop (dans ce sens là)
+x_sub_proj <- crop(x_sub_proj, extent(136, 146, -67.3, -65.4))
+# plot(x_sub_proj)
+
+# Assigner les noms de couches avec les vraies dates
+raster_time <- time(r)[raster_range]
+names(x_sub_proj) <- as.character(raster_time)
+
+#----------------------------------------------------------------------------------------
+
+# Conversion en data.frame long
+x_sub2_df <- as.data.frame(x_sub_proj, xy = TRUE)
+x_sub2_long <- pivot_longer(
+  x_sub2_df,
+  cols = -c(x, y),
+  names_to = "date_simple",
+  values_to = "value"
+) %>%
   mutate(
-    month_date = ymd(date_simple),
-    month_label = format(month_date, "%Y - %B")
-  )
+    month_date = date_simple %>% ymd() %>% + days(5),
+    month_label = format(month_date, "%Y - %B"),
+    type = factor(month_label, levels = unique(month_label))
+  ) %>%
+  filter(!is.na(value))  # optionnel : retire les NA
 
-#Crop dataset fast-ice ice shelf continent
-x_sub2_long_crop <- x_sub2_long %>%
-  dplyr::filter(x >= crop_fast_ice[1], x <= crop_fast_ice[2],
-                y >= crop_fast_ice[3], y <= crop_fast_ice[4])
+# Créer une nouvelle colonne avec les labels
+x_sub2_long$surface_type <- factor(x_sub2_long$value,
+                                  levels = c(1, 3, 4),
+                                  labels = c("continent", "ice_shelf", "fast_ice"))
 
 ```
 
 ## SIC
-### Rasters
 ```{r}
 library(raster)
+library(terra)
 library(stringr)
 library(lubridate)
+library(dplyr)
+library(purrr)
 
+# Paramètres
 wgs <- "+proj=longlat +ellps=WGS84"
 amsr_files <- list.files(AMSR_FOLDER_PATH, full.names = TRUE)
+# Lignes à modifier pour changer de deployment SealOfApproval
+target_year_months <- c("202002", "202003", "202004", "202005", "202006", "202007", "202008") 
 
-target_year_months <- format(raster_time[raster_range] + days(3), "%Y%m")
+rasters_means <- list()
 
-# Lire plusieurs rasters, les nettoyer et les reprojeter
-list_SIC <- lapply(target_year_months, function(m) {
-  
+crop_bounds <- c(130, 150, -67.5, -65)
+
+# Lire un raster pour obtenir le CRS
+r_test <- raster(amsr_files[1])
+crs_native <- projection(r_test)
+
+# Convertir les coordonnées WGS84 vers le CRS
+pts <- cbind(lon = crop_bounds[c(1,2)], lat = crop_bounds[c(3,4)])
+pts_sp <- sp::SpatialPoints(pts, proj4string = CRS(wgs))
+pts_prj <- sp::spTransform(pts_sp, CRS(crs_native))
+prj_coords <- coordinates(pts_prj)
+
+# Définir extent pour le crop initial dans le CRS natif
+ex_crop <- extent(min(prj_coords[,1]), max(prj_coords[,1]),
+                  min(prj_coords[,2]), max(prj_coords[,2]))
+
+for (m in target_year_months) {
   selected_files <- amsr_files[str_detect(amsr_files, paste0("s3125-", m))]
-  if (length(selected_files) == 0) return(NULL)
-  
+  if (length(selected_files) == 0) next
+
+  # Lire et traiter chaque fichier du mois
   rasters <- lapply(selected_files, function(f) {
+    
     r <- raster(f)
-    r <- setValues(raster(r), values(r))
-    
-    boxext <- extent(projectExtent(raster(ext_crop, crs = wgs), projection(r)))
-    r_cropped <- crop(r, boxext)
+    r <- setValues(raster(r), values(r))  # copie propre
+    # crop grossier
+    crop_r <- crop(r, ex_crop)
+    # projection en WGS84
+    r_proj <- projectRaster(crop_r, crs = wgs)
+    # crop fin en WGS84
+    final_crop <- extent(136, 146, -67.3, -65.4)
+    r_cropped <- crop(r_proj, final_crop)
+    # Suppression valeurs aberrantes
     r_cropped[r_cropped > 100] <- NA_real_
-    
-    projectRaster(r_cropped, crs = wgs)
+    r_cropped
   })
-  
+
   r_stack <- stack(rasters)
-  
-  # Stats
   mean_r <- calc(r_stack, mean, na.rm = TRUE)
-  median_r <- calc(r_stack, median, na.rm = TRUE)
-  sd_r <- calc(r_stack, sd, na.rm = TRUE)
-  
-  # Création de la date et du nom lisible
-  date_obj <- as.Date(paste0(m, "01"), format = "%Y%m%d")
-  formatted_date <- format(date_obj, "%Y - %B")
-  
-  list(
-    date = m,
-    month_label = formatted_date,
-    mean = mean_r,
-    median = median_r,
-    sd = sd_r
-  )
-})
 
+  # Convertir en SpatRaster
+  mean_r_terra <- rast(mean_r)
 
-```
-### SIC to dataframe
-```{r}
-library(dplyr)
-library(tidyr)
+  # Ajouter au nom la date formatée
+  formatted_date <- format(as.Date(paste0(m, "01"), "%Y%m%d"), "%Y - %B")
+  names(mean_r_terra) <- formatted_date
 
-# Fonction pour convertir un raster en dataframe
-raster_to_df <- function(r, month_label, date, stat_name) {
-  df <- as.data.frame(r, xy = TRUE)
-  names(df)[3] <- stat_name
-  df$month_label <- month_label
-  df$date <- date
-  return(df)
+  rasters_means[[formatted_date]] <- mean_r_terra
 }
 
-# Extraire et fusionner les données
-list_dfs <- lapply(list_SIC, function(entry) {
-  if (is.null(entry)) return(NULL)
-  
-  mean_df <- raster_to_df(entry$mean, entry$month_label, entry$date, "mean")
-  median_df <- raster_to_df(entry$median, entry$month_label, entry$date, "median")
-  sd_df <- raster_to_df(entry$sd, entry$month_label, entry$date, "sd")
-  
-  # Fusionner par xy, month_label et date
-  df_month <- mean_df %>%
-    left_join(median_df, by = c("x", "y", "month_label", "date")) %>%
-    left_join(sd_df, by = c("x", "y", "month_label", "date"))
-  
-  return(df_month)
-})
+# Empiler tous les rasters moyens en un seul SpatRaster multitemporel
+sic_stack <- rast(rasters_means)
 
-# Supprimer les NULL éventuels
-list_dfs <- Filter(Negate(is.null), list_dfs)
+# Convertir en data.frame long pour ggplot
+df_SIC <- as.data.frame(sic_stack, xy = TRUE) %>%
+  pivot_longer(
+    cols = -c(x, y),
+    names_to = "month_label",
+    values_to = "mean"
+  ) %>%
+  mutate(type = factor(month_label, levels = names(sic_stack)))
 
-# Fusionner tous les mois dans un seul data.frame
-df_SIC <- bind_rows(list_dfs)
-## Date map
 ```
 
-## Preparing facets
+### Plotting SIC
+```{r}
+library(tmap)
+
+# Multicartes avec tmap
+tm_shape(sic_stack) +
+  tm_raster(style = "cont", palette = "-viridis", title = "SIC (%)") +
+  tm_facets(ncol = 3) +
+  tm_layout(main.title = "SIC mensuel moyen", main.title.position = "center")
+```
+
+
+### Preparing facets
 ```{r}
 library(dplyr)
 library(lubridate)
@@ -834,82 +899,121 @@ df_maps <- all_seals_data %>%
     day_of_month = day(date_simple),
     month_label = format(date_simple, "%Y - %B")
   ) %>%
-  mutate(type = factor(month_label, levels = c("2019 - February", "2019 - March","2019 - April","2019 - May","2019 - June")))
-
-x_sub2_long_crop <- x_sub2_long_crop %>%
-  mutate(type = factor(month_label, levels = c("2019 - February", "2019 - March", "2019 - April", "2019 - May", "2019 - June")))
-
-# df_SIC <- df_SIC %>%
-#   mutate(type = factor(month_label, levels = c("2019 - February", "2019 - March", "2019 - April", "2019 - May", "2019 - June")))
+  mutate(type = factor(month_label, levels = c("2020 - February", 
+                                               "2020 - March", 
+                                               "2020 - April", 
+                                               "2020 - May", 
+                                               "2020 - June",
+                                               "2020 - July",
+                                               "2020 - August")))
+# Lignes à modifier pour changer de deployment SealOfApproval
 
 ```
 
-## Date map
+## Plot : One month only
 ```{r}
 library(ggplot2)
 library(ggnewscale)
 library(cmocean)
+library(terra)
+library(tidyterra)
+
+library(dplyr)
+
+theMonthYouWant = "May"
+
+df_SIC_month <- df_SIC %>% filter(grepl(theMonthYouWant, month_label))
+x_sub2_long_month <- x_sub2_long %>% filter(grepl(theMonthYouWant, month_label))
+df_maps_month <- df_maps %>% filter(grepl(theMonthYouWant, month_label))
 
 ggplot() +
-  
-  # geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
-  # scale_fill_cmocean(name = "ice", na.value = NA) +
-  # 
-  # new_scale_fill() +
-  geom_raster(data = x_sub2_long_crop, aes(x = x, y = y, fill = factor(value)), alpha = 0.8, show.legend = FALSE) +
-  scale_fill_manual(values = c(
-    "1" = "slategray", #continent
-    "3" = "#A9D6E5", # ice_shelf
-    "4" = "#C2B280" # fast_ice
-  ), na.value = NA) +
+  geom_spatraster_contour(data = large_topo_spat_crop) + # bathy
 
+  new_scale_fill() +
+  geom_raster(data = df_SIC_month, aes(x = x, y = y, fill = mean)) + # SIC
+  scale_fill_cmocean(name = "ice", na.value = NA) +
+
+  new_scale_fill() +
+  geom_raster(data = x_sub2_long, aes(x = x, y = y, fill = surface_type), alpha = 0.8) +  # fast ice
+    scale_fill_manual(values = c(
+      "continent" = "slategray",
+      "ice_shelf" = "#A9D6E5",
+      "fast_ice" = "#C2B280"), na.value = NA, name = "Surface type") +
+  
+  new_scale_color() +
+  geom_point(data = df_maps_month, aes(x = lon, y = lat, color = day_of_month), size = 0.5) +
+  scale_color_viridis_c(name = "Month day", option = "C", limits = c(1, 31), breaks = seq(1, 31, 5)) +
+
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1) +
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = 1.5, vjust = 1.5, color = "red", size = 4) +
+
+  theme_minimal() +
+  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, " (", theMonthYouWant," only, colored by day)"))
+
+```
+## Plot : Facet Date map
+```{r}
+library(ggplot2)
+library(ggnewscale)
+library(cmocean)
+library(terra)
+library(tidyterra)
+
+ggplot() +
+  new_scale_fill() +
+  geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean)) + # SIC
+  scale_fill_cmocean(name = "ice", na.value = NA) +
+
+  new_scale_fill() +
+  geom_raster(data = x_sub2_long, aes(x = x, y = y, fill = surface_type), alpha = 0.8) +  # fast ice
+    scale_fill_manual(values = c(
+      "continent" = "slategray",
+      "ice_shelf" = "#A9D6E5",
+      "fast_ice" = "#C2B280"), na.value = NA, name = "Surface type") +
+  
   new_scale_color() +
   # Affichage en couleur continue selon date
   geom_point(data = df_maps, aes(x = lon, y = lat, color = day_of_month), size = 0.5) +
-  scale_color_viridis_c(name = "Jour du mois", option = "C", limits = c(1, 31), breaks = seq(1, 31, 5)) +
+  scale_color_viridis_c(name = "Month day", option = "C", limits = c(1, 31), breaks = seq(1, 31, 5)) +
 
-  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1) +
-  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 1, stroke = 1) +
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = 1.5, vjust = 1.5, color = "red", size = 2) +
   
   theme_minimal() +
-  coord_cartesian(xlim = c(138, 145), ylim = c(-67.5, -66.5)) +
   facet_wrap(~type) +
-  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "(colored by individual)"))
+  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "(colored by day)"))
 
 ```
-## Map wd
+## Plot : Facet Wd Map
 ```{r}
 library(ggplot2)
 library(ggnewscale)
 library(cmocean)
 
 ggplot() +
+  geom_tile(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
+  scale_fill_cmocean(name = "ice", na.value = NA) +
   
-  # geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
-  # scale_fill_cmocean(name = "ice", na.value = NA) +
-  # 
-  # new_scale_fill() +
-  geom_raster(data = x_sub2_long_crop, aes(x = x, y = y, fill = factor(value)), alpha = 0.8, show.legend = FALSE) +
-  scale_fill_manual(values = c(
-    "1" = "slategray", #continent
-    "3" = "#A9D6E5", # ice_shelf
-    "4" = "#C2B280" # fast_ice
-  ), na.value = NA) +
+  new_scale_fill() +
+  geom_tile(data = x_sub2_long, aes(x = x, y = y, fill = surface_type), alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = c(
+      "continent" = "slategray",
+      "ice_shelf" = "#A9D6E5",
+      "fast_ice" = "#C2B280"), na.value = NA, name = "Surface type") +
 
   new_scale_color() +
-  # Affichage en couleur continue selon date
+  # Affichage en couleur continue selon individu
   geom_point(data = df_maps, aes(x = lon, y = lat, color = seal_id), size = 0.5) +
 
-  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 2, stroke = 1) +
-  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 4) +
-  
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 1, stroke = 1) +
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 2) +
   theme_minimal() +
-  coord_cartesian(xlim = c(138, 145), ylim = c(-68, -65)) +
+  facet_wrap(~type) +
   labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "(colored by individuals)"))
 
 ```
 
-## Map zooms
+## Plot : Map zooms
 ```{r}
 
 ```
@@ -928,6 +1032,7 @@ seal_ids <- sort(unique(all_seals_data$seal_id))
 # Définir les bornes
 x_lim <- c(33, 35)       # salinité
 y_lim <- c(-2.2, 0)      # temperature
+# Lignes à modifier pour changer de deployment SealOfApproval
 start_time <- as.POSIXct("2019-02-01", tz = "UTC")
 end_time   <- as.POSIXct("2019-06-30", tz = "UTC")
 max_days <- as.numeric(difftime(end_time, start_time, units = "days"))
@@ -1003,6 +1108,7 @@ seal_ids <- sort(unique(all_seals_data$seal_id))
 # Bornes fixes
 x_lim <- c(33, 35)       # salinité
 y_lim <- c(-2.2, 0)      # température conservative
+# Lignes à modifier pour changer de deployment SealOfApproval
 start_time <- as.POSIXct("2019-02-01", tz = "UTC")
 end_time   <- as.POSIXct("2019-06-30", tz = "UTC")
 max_days <- as.numeric(difftime(end_time, start_time, units = "days"))
@@ -1107,40 +1213,5 @@ for (seal in seal_ids) {
 
 ## SOON : T/S diagram with water masses
 ```{r}
-
-```
-
-# SOON : ACP
-```{r}
-# # Exemple de jeu de données
-# data(iris)
-# X <- iris[, 1:4]  # On ne garde que les variables numériques
-# 
-# # Centrage-réduction + ACP
-# acp_result <- prcomp(X, scale. = TRUE)
-# 
-# # Résumé des résultats
-# summary(acp_result)
-# 
-# # Affichage des composantes principales
-# acp_result$x[1:5, ]  # Coordonnées des individus
-# 
-# # Affichage des contributions des variables
-# acp_result$rotation  # Coefficients des variables sur chaque axe
-# 
-# # Biplot de l'ACP
-# biplot(acp_result, scale = 0)
-# 
-# # ou ggplot
-# library(ggplot2)
-# 
-# # Ajouter les deux premières composantes à iris
-# pca_df <- data.frame(acp_result$x, Species = iris$Species)
-# 
-# # Graphe
-# ggplot(pca_df, aes(PC1, PC2, color = Species)) +
-#   geom_point(size = 2) +
-#   labs(title = "ACP - iris dataset") +
-#   theme_minimal()
 
 ```

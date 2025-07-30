@@ -9,21 +9,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r packages, include=FALSE}
-library(ncdf4) 
-library(raster) 
-library(ggplot2)
-library(dplyr)
-library(lubridate)
-library(data.table)
-library(oce)
-library(terra)
-library(cmocean)
-library(stringr)
-library(zoo)
-library(stats)
-library(ggnewscale)
-library(nortest)
+rm(list = ls())  # Supprimer les objets en mémoire
+gc()             # Forcer le garbage collector
 
+library(ncdf4) 
+library(dplyr)
+library(oce)
+library(zoo)
 ```
 #  GLOBAL VARIABLES
 ##  Global variables & Paths
@@ -47,9 +39,9 @@ ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER <- "oceanographic_data"
 DATA_FOLDER_CORRECTED <- "oceanographic_data_corrected"
-DEPLOY_FOLDER <- "wd11" # Lignes à modifier pour changer de dépoliement...
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-913-18") # ...ou d'individu
-SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc")
+DEPLOY_FOLDER <- "wd20" # Lignes à modifier pour changer de dépoliement...
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-546-19") # ...ou d'individu
+SEAL_FILE <- paste0(SEAL_NAME, "_hr1_prof.nc") # wd20 en hr1, le reste en hr2
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 RSD_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, SEAL_NAME)
 
@@ -63,14 +55,14 @@ BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
 BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
 
 FAST_ICE_FOLDER <- "fast_ice"
-FAST_ICE_FILE <- "mertz_sara_akiko_19.nc"
+FAST_ICE_FILE <- "mertz_sara_akiko_23.nc"
 FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
 
 AMSR_FOLDER <- "amsr2"
-AMSR_FOLDER_YEAR <- "2019"
+AMSR_FOLDER_YEAR <- "2023"
 AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
-AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
-AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
+# AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
+# AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
 ```
 
 ## NetCDF Extract
@@ -121,11 +113,11 @@ df_interp <- as.data.frame(interp_results)
 ```
 ### Plotting original and corrected coordinates
 ```{r}
-# 
+
 # df_original <- data.frame(lon = lon, lat = lat)
 # 
 # ggplot() +
-#   geom_point(data = df_original, aes(x = lon, y = lat, color = "Original"), alpha = 0.4, size = 2) +
+#   #geom_point(data = df_original, aes(x = lon, y = lat, color = "Original"), alpha = 0.4, size = 2) +
 #   geom_point(data = df_interp, aes(x = LON_corr, y = LAT_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
 #   scale_color_manual(name = "Type de données", values = c("Original" = "blue", "Interpolated" = "red")) +
 #   labs(title = "Corrected Lat/Lon", x = "Longitude", y = "Latitude") +
@@ -226,7 +218,7 @@ which(col_na_only)
 
 light_non_nan <- raw_light[, !col_na_only]
 
-cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
+# cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 ```
 
 ## Dark-value correction for light profile
@@ -820,129 +812,86 @@ chla_corrected_q <- CHLA_nadRegDkNpq
 ```
 
 # MAPS
-## Crops
-```{r}
-# C'est la taille de la carte que l'on souhaite
-# crop <- c(min(lon), max(lon), min(lat), max(lat))
-crop <- c(138, 145, -67, -66.5)
-ext_crop <- extent(crop)
-```
 ## Loading bathymetry
 ```{r Bathy}
-fine_topo <- raster(BATHY_PATH_FINE)
-fine_topo_spat <- terra::rast(fine_topo)
-
 large_topo <- raster(BATHY_PATH_LARGE)
+large_topo[large_topo >=0] <-NA
 large_topo_spat <- terra::rast(large_topo)
 
-# Crop raster
-fine_topo_spat_crop <- crop(fine_topo_spat, ext_crop)
-fine_topo_spat_crop[fine_topo_spat_crop >=0] <- NA
-
-large_topo_spat_crop <- crop(large_topo_spat, ext_crop)
-large_topo_spat_crop[large_topo_spat_crop >=0] <-NA
+large_topo_spat <- crop(large_topo_spat, extent(136, 146, -67.3, -65.4))
 ```
 
 ## Loading and cropping fast ice raster
 ```{r Fast_ice}
 prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
 ex <- c(-2691055, 2933945, -2390156, 2309844)
+library(raster) 
+library(terra)
+library(lubridate)
 
-fast_ice_raster <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
-set.ext(fast_ice_raster, ext(ex))
-set.crs(fast_ice_raster, crs(prj))
+r <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
+set.ext(r, ext(ex))
+set.crs(r, crs(prj))
+#plot(r)
 
-points <- cbind(lon = c(crop[1], crop[2]), lat = c(crop[3], crop[4]))
+# Define the latitude and longitude bounds--------------------------------------
+prj="+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+
+lon_min <- 136
+lon_max <- 146 #150
+lat_min <- -67.3
+lat_max <- -65.4
+
+points <- cbind(
+  lon = c(lon_min, lon_max),  # Example longitudes
+  lat = c(lat_min,lat_max)   # Example latitudes
+)
+
 prjpoints <- project(points, to = prj, from = "EPSG:4326")
 new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
-new_r=crop(fast_ice_raster,new_ex)
+new_r=crop(r,new_ex)
+#plot(new_r)
 
-# temps du raster
-raster_time <- time(fast_ice_raster)  
-# temps de l'individu
+#define the time needed---------------------------------------------------------
+raster_time <- time(r)
 date_min <- min(dateTime, na.rm = TRUE)
 date_max <- max(dateTime, na.rm = TRUE)
-# Trouve les indices dans le raster correspondant aux dates de l'individu
-raster_range <- which(raster_time >= date_min & raster_time <= date_max)
+
+raster_start <- raster_time
+raster_end <- lead(raster_time) - 1  # fin = début du suivant - 1 jour
+
+raster_end[length(raster_end)] <- raster_start[length(raster_end)] + months(1) - 1
+raster_range <- which(raster_start <= date_max & raster_end >= date_min)
+raster_time[raster_range]
 
 x_sub <- subset(new_r, raster_range)
-# plot(x_sub, legend = FALSE)
-
-```
-
-### Removing values from the raster we don't want
-```{r fast_ice_processing}
-library(tidyr)
-
-x_sub2= project(x_sub, crs(large_topo_spat_crop), 
-                res = res(large_topo_spat_crop)) 
-
-names(x_sub2) <- raster_time[raster_range]
-# plot(x_sub2, legend = FALSE)
-# plot(x_sub2, legend = FALSE)
+plot(x_sub)
 
 #description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
-x_sub2=round(x_sub2)
+x_sub_p=x_sub
+x_sub_p[x_sub_p == 0 | x_sub_p == 2 | x_sub_p == 3 | x_sub_p == 5| x_sub_p == 6] <- NA
+x_sub_p[x_sub_p == 4] <- 100
+
+x_sub2= project(x_sub, crs(large_topo_spat),
+                res = res(large_topo_spat))
+
+names(x_sub2) <- raster_time[raster_range]
 
 x_sub2_df <- as.data.frame(x_sub2, xy = TRUE)
-x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with("2019"), names_to = "date_simple", values_to = "value")%>%
+
+library(tidyr)
+
+x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with(AMSR_FOLDER_YEAR), names_to = "date_simple", values_to = "value")%>%
   mutate(
     month_date = ymd(date_simple),
     month_label = format(month_date, "%Y - %B")
   )
 
-# Crop dataset fast-ice ice shelf continent 
+crop <- c(136, 146, -67.3, -65.4)
+# Crop dataset fast-ice ice shelf continent
 x_sub2_long_crop <- x_sub2_long %>%
   dplyr::filter(x >= crop[1], x <= crop[2],
                 y >= crop[3], y <= crop[4])
-
-```
-
-```{r}
-
-# mois_cible <- "2019-05"
-# df_plot <- x_sub2_long_crop %>%
-#   dplyr::filter(grepl(mois_cible, date_simple))
-# 
-# ggplot(df_plot, aes(x = x, y = y, fill = factor(value))) +
-#   geom_tile() +
-#   coord_quickmap() + 
-#   #coord_fixed() +
-#   scale_fill_manual(
-#     name = "Type surface",
-#     values = c(
-#       "0" = "blue",       # pack ice / ocean
-#       "1" = "grey50",     # continent
-#       "2" = "green4",     # islands
-#       "3" = "lightblue",  # ice shelf
-#       "4" = "darkblue",   # fast ice
-#       "5" = "orange",        # manual fast ice edge
-#       "6" = "red"      # auto fast ice edge
-#     ),
-#     labels = c("Pack ice / Ocean", "Continent", "Islands", "Ice shelf", "Fast ice", "Manual edge", "Auto edge")
-#   ) +
-#   labs(
-#     title = paste("Surface type -", mois_cible),
-#     x = "Longitude", y = "Latitude", fill = "Surface"
-#   ) +
-#   theme_minimal()
-
-```
-
-```{r}
-# wgs <- "+proj=longlat +ellps=WGS84"
-# amsr_raster <- raster(AMSR_PATH)
-# amsr_raster[amsr_raster > 100] <- NA_real_
-# amsr_raster <- setValues(raster(amsr_raster), values(amsr_raster))
-# plot(amsr_raster)
-# 
-# boxext <- extent(projectExtent(raster(extent(c(130,144,-66,-65)), crs = wgs), projection(amsr_raster)))
-# amsr_cropped=crop(amsr_raster, boxext)
-# plot(amsr_cropped)
-# 
-# amsr_raster_cropped <- projectRaster(amsr_cropped, crs = wgs)
-# plot(amsr_raster_cropped)
-
 ```
 
 ## Mean/sd/median SIC raster map
@@ -954,7 +903,7 @@ library(lubridate)
 wgs <- "+proj=longlat +ellps=WGS84"
 amsr_files <- list.files(AMSR_FOLDER_PATH, full.names = TRUE)
 
-target_year_months <- format(raster_time[raster_range] + days(3), "%Y%m")
+target_year_months <- c("202302", "202303", "202304", "202305", "202306", "202307", "202308", "202309") #format(raster_time[raster_range], "%Y%m")
 
 # Lire plusieurs rasters, les nettoyer et les reprojeter
 list_SIC <- lapply(target_year_months, function(m) {
@@ -998,11 +947,17 @@ list_SIC <- lapply(target_year_months, function(m) {
 ```{r}
 library(dplyr)
 library(tidyr)
+library(purrr)
+
+list_SIC[[1]]$mean[is.na(list_SIC[[1]]$mean[])] <- 0
+list_SIC[[1]]$median[is.na(list_SIC[[1]]$median[])] <- 0
+list_SIC[[1]]$sd[is.na(list_SIC[[1]]$sd[])] <- 0
 
 # Fonction pour convertir un raster en dataframe
 raster_to_df <- function(r, month_label, date, stat_name) {
   df <- as.data.frame(r, xy = TRUE)
   names(df)[3] <- stat_name
+  df <- df %>% filter(!is.na(.data[[stat_name]]), !is.nan(.data[[stat_name]]))
   df$month_label <- month_label
   df$date <- date
   return(df)
@@ -1016,27 +971,32 @@ list_dfs <- lapply(list_SIC, function(entry) {
   median_df <- raster_to_df(entry$median, entry$month_label, entry$date, "median")
   sd_df <- raster_to_df(entry$sd, entry$month_label, entry$date, "sd")
   
-  # Fusionner par xy, month_label et date
-  df_month <- mean_df %>%
-    left_join(median_df, by = c("x", "y", "month_label", "date")) %>%
-    left_join(sd_df, by = c("x", "y", "month_label", "date"))
-  
+  if (nrow(mean_df) == 0 || nrow(median_df) == 0 || nrow(sd_df) == 0) return(NULL)
+
+  # Trouver les coordonnées communes à tous les 3
+  common_coords <- reduce(list(mean_df, median_df, sd_df), ~ inner_join(.x, .y, by = c("x", "y"))) %>%
+    dplyr::select(x, y)
+
+  # Filtrer chaque df pour ne garder que les coordonnées communes
+  mean_df_filt <- semi_join(mean_df, common_coords, by = c("x", "y"))
+  median_df_filt <- semi_join(median_df, common_coords, by = c("x", "y"))
+  sd_df_filt <- semi_join(sd_df, common_coords, by = c("x", "y"))
+
+  # Fusionner
+  df_month <- mean_df_filt %>%
+    left_join(median_df_filt, by = c("x", "y", "month_label", "date")) %>%
+    left_join(sd_df_filt, by = c("x", "y", "month_label", "date"))
+
   return(df_month)
 })
 
 # Supprimer les NULL éventuels
-list_dfs <- Filter(Negate(is.null), list_dfs)
+#list_dfs <- Filter(Negate(is.null), list_dfs)
 
 # Fusionner tous les mois dans un seul data.frame
 df_SIC <- bind_rows(list_dfs)
 ```
-### Plotting SIC
-```{r}
-# idMap <- 2
-# plot(list_SIC[[idMap]]$mean, main = paste0("SIC Mean (", list_SIC[[idMap]]$month_label,")"))
-# plot(list_SIC[[idMap]]$median, main = paste0("SIC Median (", list_SIC[[idMap]]$month_label,")"))
-# plot(list_SIC[[idMap]]$sd, main = paste0("SIC SD (", list_SIC[[idMap]]$month_label,")"))
-```
+
 # RDS Export
 ```{r}
 
