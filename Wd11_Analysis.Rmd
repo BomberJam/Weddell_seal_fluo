@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
 
 DATA_FOLDER_CORRECTED <- "oceanographic_data_corrected"
-DEPLOY_FOLDER <- "wd12" # Lignes à modifier pour changer de dépoliement... SealOfApproval
+DEPLOY_FOLDER <- "wd20" # Lignes à modifier pour changer de dépoliement... SealOfApproval
 
 DEPLOYMENT_FILE <- paste0("combined_",DEPLOY_FOLDER,".rds")
 RDS_DEPLOYMENT_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, DEPLOYMENT_FILE)
@@ -28,11 +28,11 @@ BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
 BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
 
 FAST_ICE_FOLDER <- "fast_ice"
-FAST_ICE_FILE <- "mertz_sara_akiko_20.nc" # Lignes à modifier pour changer de deployment SealOfApproval
+FAST_ICE_FILE <- "mertz_sara_akiko_23.nc" # Lignes à modifier pour changer de deployment SealOfApproval
 FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
 
 AMSR_FOLDER <- "amsr2"
-AMSR_FOLDER_YEAR <- "2020" # Lignes à modifier pour changer de deployment SealOfApproval
+AMSR_FOLDER_YEAR <- "2023" # Lignes à modifier pour changer de deployment SealOfApproval
 AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
 ```
 
@@ -125,9 +125,9 @@ limits_list <- list(
 depth_list <- list(
   "light" = c(200, 0),
   "chla" = c(200, 0),
-  "temp" = c(600, 0),
-  "sal" = c(600, 0),
-  "dens" = c(600, 0)
+  "temp" = c(200, 0),
+  "sal" = c(200, 0),
+  "dens" = c(200, 0)
 )
 
 # Liste pour stocker les graphiques finaux
@@ -742,7 +742,7 @@ all_seals_data <- readRDS(RDS_DEPLOYMENT_PATH)
 raster_time <- time(r)
 date_min <- as.Date(min(all_seals_data$date_simple, na.rm = TRUE))
 date_max <- as.Date(max(all_seals_data$date_simple, na.rm = TRUE))
-raster_range <- c(1,2,3,4,5,6,7) # Lignes à modifier pour changer de deployment SealOfApproval
+raster_range <- c(1,2,3,4,5,6,7,8) # Lignes à modifier pour changer de deployment SealOfApproval
 
 crop_bounds <- c(130, 150, -67.5, -65)
 pts <- cbind(lon = crop_bounds[c(1,2)], lat = crop_bounds[c(3,4)])
@@ -807,7 +807,7 @@ library(purrr)
 wgs <- "+proj=longlat +ellps=WGS84"
 amsr_files <- list.files(AMSR_FOLDER_PATH, full.names = TRUE)
 # Lignes à modifier pour changer de deployment SealOfApproval
-target_year_months <- c("202002", "202003", "202004", "202005", "202006", "202007", "202008") 
+target_year_months <- c("202302", "202303", "202304", "202305", "202306", "202307", "202308",  "202309") 
 
 rasters_means <- list()
 
@@ -886,6 +886,16 @@ tm_shape(sic_stack) +
   tm_layout(main.title = "SIC mensuel moyen", main.title.position = "center")
 ```
 
+```{r}
+# Du code simplement utile pour trouver les profils TRES loins
+# positions_wd12 <- all_seals_data %>%
+#   filter(seal_id == "wd12-146-19") %>%
+#   distinct(profile_id, lon, lat)
+# 
+# positions_wd12_subset <- df_maps %>%
+#   filter(seal_id == "wd12-146-19", lat >= -65, lat <= -64) %>%
+#   distinct(profile_id, lon, lat)
+```
 
 ### Preparing facets
 ```{r}
@@ -894,18 +904,20 @@ library(lubridate)
 
 df_maps <- all_seals_data %>%
   dplyr::select(seal_id, profile_id, depth, lon, lat, light_corrected, chla_corrected, date_simple) %>%
+  #filter(!(seal_id == "wd12-146-19" & profile_id == 9)) %>% # SealOfApproval
   mutate(
     date_simple = as.Date(date_simple),
     day_of_month = day(date_simple),
     month_label = format(date_simple, "%Y - %B")
   ) %>%
-  mutate(type = factor(month_label, levels = c("2020 - February", 
-                                               "2020 - March", 
-                                               "2020 - April", 
-                                               "2020 - May", 
-                                               "2020 - June",
-                                               "2020 - July",
-                                               "2020 - August")))
+  mutate(type = factor(month_label, levels = c("2023 - February", 
+                                               "2023 - March", 
+                                               "2023 - April", 
+                                               "2023 - May", 
+                                               "2023 - June",
+                                               "2023 - July",
+                                               "2023 - August",
+                                               "2023 - September")))
 # Lignes à modifier pour changer de deployment SealOfApproval
 
 ```
@@ -960,7 +972,7 @@ library(terra)
 library(tidyterra)
 
 ggplot() +
-  new_scale_fill() +
+
   geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean)) + # SIC
   scale_fill_cmocean(name = "ice", na.value = NA) +
 
@@ -981,7 +993,7 @@ ggplot() +
   
   theme_minimal() +
   facet_wrap(~type) +
-  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "(colored by day)"))
+  labs(x = "Lon E", y = "Lat S", title = paste0(DEPLOY_FOLDER, "(colored by day)"))
 
 ```
 ## Plot : Facet Wd Map
@@ -991,11 +1003,11 @@ library(ggnewscale)
 library(cmocean)
 
 ggplot() +
-  geom_tile(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
+  geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
   scale_fill_cmocean(name = "ice", na.value = NA) +
   
   new_scale_fill() +
-  geom_tile(data = x_sub2_long, aes(x = x, y = y, fill = surface_type), alpha = 0.8, show.legend = FALSE) +
+  geom_raster(data = x_sub2_long, aes(x = x, y = y, fill = surface_type), alpha = 0.8, show.legend = FALSE) +
     scale_fill_manual(values = c(
       "continent" = "slategray",
       "ice_shelf" = "#A9D6E5",
@@ -1013,8 +1025,70 @@ ggplot() +
 
 ```
 
-## Plot : Map zooms
+### Plot : Wd focus on one deployment
 ```{r}
+library(ggplot2)
+library(ggnewscale)
+library(cmocean)
+
+seal_of_interest <- "wd12-146-19"
+df_maps$highlight <- ifelse(df_maps$seal_id == seal_of_interest, "highlight", "other")
+
+ggplot() +
+  geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
+  scale_fill_cmocean(name = "ice", na.value = NA) +
+  
+  new_scale_fill() +
+  geom_raster(data = x_sub2_long, aes(x = x, y = y, fill = surface_type), alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = c(
+      "continent" = "slategray",
+      "ice_shelf" = "#A9D6E5",
+      "fast_ice" = "#C2B280"), na.value = NA, name = "Surface type") +
+
+  new_scale_color() +
+  # Points gris pour tous les autres
+  geom_point(data = subset(df_maps, highlight == "other"),
+             aes(x = lon, y = lat),
+             color = "gray60", alpha = 0.3, size = 0.5) +
+  # Point coloré pour l’individu sélectionné
+  geom_point(data = subset(df_maps, highlight == "highlight"),
+             aes(x = lon, y = lat, color = seal_id), size = 0.5) +
+
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 1, stroke = 1) +
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 2) +
+  theme_minimal() +
+  facet_wrap(~type) +
+  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER,"(",seal_of_interest," highlighted)"))
+
+```
+## Plot : Chla value facet map
+```{r}
+library(ggplot2)
+library(ggnewscale)
+library(cmocean)
+library(viridis)
+
+ggplot() +
+  geom_raster(data = df_SIC, aes(x = x, y = y, fill = mean), alpha = 0.7) +
+  scale_fill_cmocean(name = "ice", na.value = NA) +
+  
+  new_scale_fill() +
+  geom_raster(data = x_sub2_long, aes(x = x, y = y, fill = surface_type), alpha = 0.8, show.legend = FALSE) +
+    scale_fill_manual(values = c(
+      "continent" = "slategray",
+      "ice_shelf" = "#A9D6E5",
+      "fast_ice" = "#C2B280"), na.value = NA, name = "Surface type") +
+
+  new_scale_color() +
+  # Points colorés selon chla_corrected
+  geom_point(data = df_maps, aes(x = lon, y = lat, color = chla_corrected), size = 0.5, alpha = 0.8) +
+  scale_color_viridis_c(option = "D", na.value = NA, name = "Chl-a", limits = c(0,5)) +
+
+  geom_point(data = DDU_loc, aes(x = lon, y = lat), color = "red", shape = 4, size = 1, stroke = 1) +
+  annotate("text", x = DDU_loc$lon, y = DDU_loc$lat, label = "DDU", hjust = -0.2, vjust = -0.5, color = "red", size = 2) +
+  theme_minimal() +
+  facet_wrap(~type) +
+  labs(x = "Lon", y = "Lat", title = paste0(DEPLOY_FOLDER, "(Chl-a)"))
 
 ```
 
