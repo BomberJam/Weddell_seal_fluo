@@ -183,8 +183,8 @@ ggplot(monthly_counts, aes(x = month_label, y = n_profiles)) +
   theme(axis.text.x = element_text(angle = 0, hjust = 0.5), strip.text = element_text(face = "bold"))
 
 ```
-## Work in progress
-```{r}
+## Temporal distribution of profiles
+```{r fig.height=10, fig.width=12}
 library(dplyr)
 library(ggplot2)
 library(lubridate)
@@ -211,22 +211,19 @@ profiles_unique <- all_profiles %>%
 # Graphique
 ggplot(profiles_unique, aes(x = date, y = seal_id_local, fill = seal_id)) +
   geom_density_ridges(
-    scale = 1.5, alpha = 0.8, color = "black", rel_min_height = 0.01) +
+    scale = 1, alpha = 0.8, color = "black", rel_min_height = 0.01) +
   facet_wrap(~year, scales = "free_x", nrow = 1) +
-  scale_x_date(date_labels = "%b") +   # Jan, Feb, ...
+  scale_x_date(date_labels = "%b", date_breaks = "2 months") +   # Jan, Feb, ...
   theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    axis.text.x = element_text(angle = 0, hjust = 0.5, size = 20),
+    axis.text.y = element_text(size = 20),
     axis.title.x = element_blank(),
     axis.title.y = element_blank(),
     legend.position = "none",
-    strip.text = element_text(face = "bold", size = 12),
+    strip.text = element_text(face = "bold", size = 24),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
     panel.spacing = unit(1, "lines")
-  ) +
-  labs(
-    title = "Temporal distribution of profiles per seal (by year)",
-    x = "",
-    y = ""
   )
 
 ```
