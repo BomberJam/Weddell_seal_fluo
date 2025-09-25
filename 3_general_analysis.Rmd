@@ -1,5 +1,5 @@
 ---
-title: "deploy_profiles_analysis"
+title: "general_analysis"
 author: "Claude Cugerone"
 date: "2025-05-22"
 output: html_document
@@ -9,81 +9,18 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r packages, include=FALSE}
-library(ncdf4)
-library(ggplot2)
-
-```
-
-<h2>Metadata analysis</h2>
-<h4>Date interval for each individual</h4>
-```{r}
-ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
-DATA_FOLDER <- "oceanographic_data"
-DEPLOY_FOLDER <- "wd11"
-DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
-
-nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
-ranges_list <- list()
-
-for (nc_file in nc_files) {
-  nc_data <- nc_open(nc_file)
-  juld <- ncvar_get(nc_data, "JULD")
-
-  dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
-  dateTime <- round(dateTime, units = "mins")
-
-  ranges_list[[basename(nc_file)]] <- range(dateTime, na.rm = TRUE)
-  nc_close(nc_data)
-}
-
-for (file_name in names(ranges_list)) {
-  cat("\nFichier:", file_name, "\n")
-  print(ranges_list[[file_name]])
-}
-```
-<h4>Number of profiles per individual</h4>
-```{r}
-ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
-DATA_FOLDER <- "oceanographic_data"
-DEPLOY_FOLDER <- "wd20"
-DATA_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER)
-
-nc_files <- list.files(DATA_PATH, pattern = "\\.nc$", full.names = TRUE)
-profiles_list <- list()
-
-for (nc_file in nc_files)
-{
-  nc_data <- nc_open(nc_file)
-
-  profiles_data <- ncvar_get(nc_data, "LIGHT")
-
-  num_profiles <- dim(profiles_data)[2]
-
-  profiles_list[[basename(nc_file)]] <- num_profiles
-
-  nc_close(nc_data)
-}
-
-for (file_name in names(profiles_list)) {
-  cat("\nFichier:", file_name, "\n")
-  cat("Nombre de profils de lumière:", profiles_list[[file_name]], "\n")
-}
-
-```
-#Distribution temporelle des profils par depl.
+# Metadata analysis
+## Data temporal distribution by year
 ```{r}
 library(ncdf4)
 library(ggplot2)
 library(dplyr)
+library(here)
 
-ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+ROOT_PROJ <- here() # root project
 DATA_FOLDER <- "oceanographic_data"
-#deployments <- c("wd10", "wd11", "wd12", "wd13", "wd19", "wd20", "wd31")
-deployments <- c("wd11", "wd12", "wd20", "wd31") # winter
-#deployments <- c("wd10", "wd13", "wd19") # summer
+deployments <- c("wd11", "wd12", "wd20") # winter
 
-# Dataframe pour stocker tout
 all_profiles <- data.frame()
 
 for (DEPLOY_FOLDER in deployments) {
@@ -98,7 +35,6 @@ for (DEPLOY_FOLDER in deployments) {
     dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
     dateTime <- round(dateTime, units = "mins")
 
-    # Création d'une entrée par profil (valeur de JULD)
     profiles <- data.frame(
       dateTime = dateTime,
       deployment = DEPLOY_FOLDER,
@@ -120,22 +56,26 @@ ggplot(all_profiles, aes(x = dateTime, y = deployment)) +
 
 ```
 
-# Nombre de profils par individu
+## Number of profiles per individuals
 ```{r}
 library(ncdf4)
 library(dplyr)
 library(ggplot2)
+library(here)
 
-all_profiles <- readRDS("/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo/oceanographic_data_corrected/all_deployment.rds")
+# Chemin relatif à la racine du projet
+all_profiles_path <- file.path(here(), "oceanographic_data_corrected", "all_deployment.rds")
 
-# Extraire le déploiement, puis compter les profils uniques (1 par profile_id)
+# Charger les données
+all_profiles <- readRDS(all_profiles_path)
+
+# Extract the deployment, then count unique profiles (one per profile_id)
 profile_counts <- all_profiles %>%
-  distinct(seal_id, profile_id, .keep_all = TRUE) %>%  # 1 ligne par profil
+  distinct(seal_id, profile_id, .keep_all = TRUE) %>%  # 1 line per profile
   mutate(deployment = sub("-.*$", "", seal_id)) %>%
   group_by(seal_id, deployment) %>%
   summarise(n_profiles = n(), .groups = "drop")
 
-# Affichage
 ggplot(profile_counts, aes(x = seal_id, y = n_profiles, fill = deployment)) +
   geom_col() +
   theme_minimal() +
@@ -146,16 +86,19 @@ ggplot(profile_counts, aes(x = seal_id, y = n_profiles, fill = deployment)) +
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-# Nombre de profils par mois par depl.
+## Monthly number of profiles by year
 ```{r}
 library(dplyr)
 library(ggplot2)
 library(lubridate)
+library(here)
 
-# Lire les données
-all_profiles <- readRDS("/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo/oceanographic_data_corrected/all_deployment.rds")
+# Chemin relatif à la racine du projet
+all_profiles_path <- file.path(here(), "oceanographic_data_corrected", "all_deployment.rds")
 
-# Extraire les profils uniques
+# Charger les données
+all_profiles <- readRDS(all_profiles_path)
+
 profiles_unique <- all_profiles %>%
   distinct(seal_id, profile_id, .keep_all = TRUE) %>% 
   mutate(
@@ -163,38 +106,40 @@ profiles_unique <- all_profiles %>%
     month_label = month(date, label = TRUE, abbr = TRUE)
   )
 
-# Compter les profils par mois et par déploiement
+# Count the number of profiles per month and per deployment
 monthly_counts <- profiles_unique %>%
   group_by(deployment, month_label) %>%
   summarise(n_profiles = n(), .groups = "drop")
 
-# Ordonner les mois
+# Order the months
 monthly_counts$month_label <- factor(monthly_counts$month_label,
                                      levels = month.abb, ordered = TRUE)
 
-# Graphe final
 ggplot(monthly_counts, aes(x = month_label, y = n_profiles)) +
   geom_col(fill = "steelblue") +
   facet_wrap(~deployment, ncol = 1, scales = "free_y") +
   theme_minimal() +
   labs(title = "Monthly number of profiles by deployment", x = "", y = "Number of profiles"
   ) +
-  coord_cartesian(ylim = c(0, 300)) +   # fixe le y
+  coord_cartesian(ylim = c(0, 300)) +
   theme(axis.text.x = element_text(angle = 0, hjust = 0.5), strip.text = element_text(face = "bold"))
 
 ```
-## Work in progress
-```{r}
+## Temporal distribution of profiles
+```{r fig.height=10, fig.width=12}
 library(dplyr)
 library(ggplot2)
 library(lubridate)
 library(ggridges)
 library(forcats)
+library(here)
+
+# Chemin relatif à la racine du projet
+all_profiles_path <- file.path(here(), "oceanographic_data_corrected", "all_deployment.rds")
 
 # Charger les données
-all_profiles <- readRDS("/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo/oceanographic_data_corrected/all_deployment.rds")
+all_profiles <- readRDS(all_profiles_path)
 
-# Préparer les profils
 profiles_unique <- all_profiles %>%
   distinct(seal_id, profile_id, .keep_all = TRUE) %>%
   mutate(
@@ -204,29 +149,25 @@ profiles_unique <- all_profiles %>%
   ) %>%
   group_by(deployment) %>%
   mutate(
-    seal_id_local = factor(seal_id)  # simple facteur alphabétique
+    seal_id_local = factor(seal_id)  # simple alphabetic factor
   ) %>%
   ungroup()
 
-# Graphique
 ggplot(profiles_unique, aes(x = date, y = seal_id_local, fill = seal_id)) +
   geom_density_ridges(
-    scale = 1.5, alpha = 0.8, color = "black", rel_min_height = 0.01) +
+    scale = 1, alpha = 0.8, color = "black", rel_min_height = 0.01) +
   facet_wrap(~year, scales = "free_x", nrow = 1) +
-  scale_x_date(date_labels = "%b") +   # Jan, Feb, ...
+  scale_x_date(date_labels = "%b", date_breaks = "2 months") +   # Jan, Feb, ...
   theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    axis.text.x = element_text(angle = 0, hjust = 0.5, size = 20),
+    axis.text.y = element_text(size = 20),
     axis.title.x = element_blank(),
     axis.title.y = element_blank(),
     legend.position = "none",
-    strip.text = element_text(face = "bold", size = 12),
+    strip.text = element_text(face = "bold", size = 24),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
     panel.spacing = unit(1, "lines")
-  ) +
-  labs(
-    title = "Temporal distribution of profiles per seal (by year)",
-    x = "",
-    y = ""
   )
 
 ```

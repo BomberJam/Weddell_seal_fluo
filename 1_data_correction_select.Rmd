@@ -9,44 +9,32 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r packages, include=FALSE}
-rm(list = ls())  # Supprimer les objets en mémoire
-gc()             # Forcer le garbage collector
+rm(list = ls())
+gc()             # garbage collector
 
 library(ncdf4) 
 library(dplyr)
 library(oce)
 library(zoo)
+library(here)
 ```
 #  GLOBAL VARIABLES
 ##  Global variables & Paths
 ```{r variables}
 MAX_CHLA_DEPTH <- 175 # define depth at which to consider dark signal (CHLA "absolute zero")
-MAX_DEPTH <- 600
+MAX_DEPTH <- 200
 SURFACE_NOT_NAN <- 4:10
-idprofile <- 1 # Indice du profil affiché sur les plots individuels.
+idprofile <- 1 # Index of the profile displayed on individual plots
 
-DDU_loc=NULL
-DDU_loc$lat = -66.66306	
-DDU_loc$lon = 140.00083
-DDU_loc=as.data.frame(DDU_loc)
-
-LON_MIN <- 130
-LON_MAX <- 150
-LAT_MIN <- -68
-LAT_MAX <- -65
-
-ROOT_PROJ <- "/home/cactus/Documents/Oceano/M2/LOCEAN/Weddell_seal_fluo"
+ROOT_PROJ <- here() # project root
 
 DATA_FOLDER <- "oceanographic_data"
 DATA_FOLDER_CORRECTED <- "oceanographic_data_corrected"
-DEPLOY_FOLDER <- "wd20" # Lignes à modifier pour changer de dépoliement...
-SEAL_NAME <- paste0(DEPLOY_FOLDER,"-546-19") # ...ou d'individu
-SEAL_FILE <- paste0(SEAL_NAME, "_hr1_prof.nc") # wd20 en hr1, le reste en hr2
+DEPLOY_FOLDER <- "wd11" # Lines to modify to change the SealOfApproval deployment
+SEAL_NAME <- paste0(DEPLOY_FOLDER,"-913-18") # ...or the individual SealOfApproval
+SEAL_FILE <- paste0(SEAL_NAME, "_hr2_prof.nc") # wd20 in hr1, others in hr2
 NC_PATH <- file.path(ROOT_PROJ, DATA_FOLDER, DEPLOY_FOLDER, SEAL_FILE)
 RSD_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, SEAL_NAME)
-
-DEPLOYMENT_FILE <- paste0("combined_",DEPLOY_FOLDER,".rds")
-RDS_DEPLOYMENT_PATH <- file.path(ROOT_PROJ, DATA_FOLDER_CORRECTED, DEPLOY_FOLDER, DEPLOYMENT_FILE)
 
 BATHY_FOLDER <- "bathy"
 FINE_TOPO_FILE <- "gvdem100v3/w001001.adf"
@@ -55,14 +43,13 @@ BATHY_PATH_FINE <- file.path(ROOT_PROJ, BATHY_FOLDER, FINE_TOPO_FILE)
 BATHY_PATH_LARGE <- file.path(ROOT_PROJ, BATHY_FOLDER, LARGE_TOPO_FILE)
 
 FAST_ICE_FOLDER <- "fast_ice"
-FAST_ICE_FILE <- "mertz_sara_akiko_23.nc"
+FAST_ICE_FILE <- "mertz_sara_akiko_19.nc" # SealOfApproval
 FAST_ICE_PATH <- file.path(ROOT_PROJ, FAST_ICE_FOLDER, FAST_ICE_FILE)
 
 AMSR_FOLDER <- "amsr2"
-AMSR_FOLDER_YEAR <- "2023"
+AMSR_FOLDER_YEAR <- "2019" # SealOfApproval
 AMSR_FOLDER_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR)
-# AMSR_FILE <- "asi-AMSR2-s3125-20190401-v5.4.tif"
-# AMSR_PATH <- file.path(ROOT_PROJ,AMSR_FOLDER,AMSR_FOLDER_YEAR,AMSR_FILE)
+
 ```
 
 ## NetCDF Extract
@@ -82,26 +69,29 @@ nc_close(nc_data)
 # Date and coordinates correction
 ## Date formatting
 ```{r dataframe}
-# Vectorisation de la profondeur
+# Vectorization of depth
 pres_vec <- pres[, 1]
 
-# Julien -> UTC
+# Convert Julian date to UTC
 dateTime <- as.POSIXct(juld * 86400, origin = "1950-01-01", tz = "UTC")
-dateTime <- round(dateTime, units = "mins")  # arrondi à la minute la plus proche
+dateTime <- round(dateTime, units = "mins")  # round to the nearest minute
 ```
 
 ## Correcting longitude and latitude
 ```{r corrected lon lat}
+# Load diagnostic CSV and convert DATE column to POSIXct
 diag <- read.csv("filtered_dives_wd_new.csv", stringsAsFactors = FALSE)
 diag$date <- as.POSIXct(diag$DATE, format="%Y-%m-%dT%H:%M")
 
-# extraire l'individu qui nous intéresse et trier par date
+# Extract the individual of interest and sort by date
 df_wd <- diag %>% filter(REF == SEAL_NAME)
 df_wd <- df_wd %>% arrange(date)
 
-t1 <- as.numeric(df_wd$date )
+# Convert dates to numeric for interpolation
+t1 <- as.numeric(df_wd$date)
 t2 <- as.numeric(as.POSIXct(dateTime))
 
+# Interpolate longitude and latitude at the measurement times
 cols <- c("LON", "LAT")
 interp_results <- lapply(cols, function(col) {
   approx(x = t1, y = df_wd[[col]], xout = t2, rule = 2)$y
@@ -111,6 +101,7 @@ names(interp_results) <- paste0(cols, "_corr")
 df_interp <- as.data.frame(interp_results)
 
 ```
+
 ### Plotting original and corrected coordinates
 ```{r}
 
@@ -121,7 +112,7 @@ df_interp <- as.data.frame(interp_results)
 #   geom_point(data = df_interp, aes(x = LON_corr, y = LAT_corr, color = "Interpolated"), alpha = 0.4, size = 2) +
 #   scale_color_manual(name = "Type de données", values = c("Original" = "blue", "Interpolated" = "red")) +
 #   labs(title = "Corrected Lat/Lon", x = "Longitude", y = "Latitude") +
-#   # ylim(-70, -63) + # même axe que dans le code de Loïc (pour vérifier)
+#   # ylim(-70, -63) +
 #   theme_minimal()
 ```
 
@@ -132,8 +123,7 @@ lat <- df_interp$LAT_corr
 
 # MLD
 ```{r MLD}
-
-# Fonction pour trouver le premier index valide
+# Function to find the first valid index
 first_valid_index <- function(condition)
 {
   idx <- which(condition)
@@ -147,7 +137,7 @@ densThreshold <- 0.03
 refDepth <- 10
 minProfileStartDepth <- 20
 
-# Trouver les premieres profondeurs valides (sur le profil temperature)
+# Find the first valid depths (on the temperature profile)
 profileStartDepth <- rep(NA, n_profiles)
 for (i in 1:n_profiles) {
   firstGood <- first_valid_index(!is.na(temperature[, i]))
@@ -157,32 +147,32 @@ for (i in 1:n_profiles) {
 }
 validProfiles <- which(profileStartDepth <= minProfileStartDepth)
 
-# Boucle sur les profils valides
+# Loop over valid profiles
 for (i in validProfiles) {
   S <- sal[, i]
   T <- temperature[, i]
   P <- pres[, i]
 
   good <- !is.na(S) & !is.na(T) & !is.na(P)
-  if (sum(good) == 0) next  # ignorer les profils entièrement vides
+  if (sum(good) == 0) next  # skip profiles that are completely empty
 
-  # Calcul de la densité potentielle
+  # Compute potential density
   ctd <- as.ctd(salinity = S[good], temperature = T[good], pressure = P[good])
-  #sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
+  # sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, ctd@data$pressure)
   sigma0 <- swSigma0(ctd@data$salinity, ctd@data$temperature, 0)
 
   full_sigma0 <- rep(NA, n_levels)
   full_sigma0[which(good)] <- sigma0
 
-  # Trouve l'indice de référence (premier >= 10 m)
+  # Find the reference index (first >= 10 m)
   refIdx <- first_valid_index(ctd@data$pressure >= refDepth)
 
   if (!is.na(refIdx) && !is.na(sigma0[refIdx])) {
     refSigma0 <- sigma0[refIdx]
-    # Différence de densité sur tous les niveaux valides
+    # Density difference at all valid levels
     deltaSigma <- full_sigma0 - refSigma0
 
-    # Trouve l'indice où le seuil est dépassé au-delà de 10 m
+    # Find the index where the threshold is exceeded beyond 10 m
     mld_idx <- first_valid_index(deltaSigma > densThreshold & P > refDepth)
     if (!is.na(mld_idx)) {
       mld_vec[i] <- P[mld_idx]
@@ -192,21 +182,11 @@ for (i in validProfiles) {
   }
 }
 
-# Créer un data frame pour les ggplots et la sauvegarde des plots
+# Create a data frame for ggplots and saving plots
 df_mld <- data.frame(
   profile = validProfiles,
   value = mld_vec[validProfiles]
 )
-```
-## Plotting MLD
-```{r}
-
-# ggplot(df_mld, aes(x = profile, y = value)) +
-#   geom_point(shape = 4, color = "blue") +
-#   geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "red", linewidth = 0.25, se = FALSE) +
-#   scale_y_reverse() +
-#   labs(x = "Profile", y = "Depth (m)", title = paste0("Mixed Layer Depth (MLD) - ",SEAL_NAME)) +
-#   theme_minimal()
 
 ```
 
@@ -217,13 +197,11 @@ col_na_only <- apply(raw_light, 2, function(col) all(is.na(col)))
 which(col_na_only)
 
 light_non_nan <- raw_light[, !col_na_only]
-
 # cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 ```
 
 ## Dark-value correction for light profile
 ```{r DarkValue}
-
 light_non_log <- exp(raw_light)
 light_log <- raw_light
 min_window = 4
@@ -232,22 +210,22 @@ min_botIntegBound = 150
 
 light_corrected_non_log <- light_non_log
 
-# Trouver les colonnes non vides dans `light`
+# Find columns that are not entirely empty in `light`
 col_na_only <- apply(light_non_log, 2, function(col) all(is.na(col)))
 valid_cols <- which(!col_na_only)
 
-delta_for_cstLIGHT <- 1e-8 # define standard delta between min and max of profile to eliminate profile for being a constant profile
+delta_for_cstLIGHT <- 1e-8 # define standard delta between min and max of profile to eliminate profiles considered constant
 max_depth <- MAX_DEPTH
 
-# Boucle sur les indices des colonnes non vides
+# Loop over indices of non-empty columns
 for (ii_temp in valid_cols) {
 
-  # Initialiser les variables locales
+  # Initialize local variables
   PCST_temp <- max_depth
   PDARK_temp <- max_depth
   VDARK_temp <- 0
 
-  # Indices des premières et dernières valeurs non NA dans le profil
+  # Indices of the first and last non-NA values in the profile
   col_temp <- light_non_log[, ii_temp]
   first_non_NaN_temp <- which(!is.na(col_temp))[1]
   last_non_NaN_temp  <- tail(which(!is.na(col_temp)), 1)
@@ -255,44 +233,44 @@ for (ii_temp in valid_cols) {
   cstDetect_temp <- 0
 
   if ((last_non_NaN_temp - first_non_NaN_temp + 1) < 2) {
-    # Pas assez de points valides pour faire un test
+    # Not enough valid points to perform a test
     ind_cst_temp <- last_non_NaN_temp + 1
     PCST_temp <- NA
   } else {
     for (jj_temp in first_non_NaN_temp:(last_non_NaN_temp - 1)) {
       vec_temp <- light_corrected_non_log[jj_temp:last_non_NaN_temp, ii_temp]
-      # simple verif pour être sur de ne pas traiter des NA
+      # Simple check to avoid processing NAs
       vec_temp <- vec_temp[!is.na(vec_temp)]
       if (length(vec_temp) == 0) {
         range_temp <- NA
       } else {
-        # Calcul de l'amplitude (range) dans la partie profonde
+        # Compute range in the deep part
         range_temp <- diff(range(vec_temp))
       }
       if (is.na(range_temp) || range_temp <= delta_for_cstLIGHT) {
-        # Signal considéré comme constant
+        # Signal considered constant
         cstDetect_temp <- 1
-        break # end for loop when range < delta_for_cstLIGHT (1e-8) i.e. LIGHT signal is considered constant in interval j:bottom
+        break # exit loop when range < delta_for_cstLIGHT, i.e., LIGHT signal is constant in interval j:bottom
       }
     }
-    # write index of first value belonging to dark signal
+    # Write index of first value belonging to dark signal
     ind_cst_temp <- jj_temp + 1
-    # write depth of dark value
+    # Write depth of dark value
     PCST_temp <- pres_vec[ind_cst_temp]
   }
 
-  # Si signal constant détecté, on masque la partie cst (du fond vers le haut)
+  # If constant signal detected, mask the constant part (from bottom upwards)
   if (cstDetect_temp == 1) {
-    # On s’assure de ne pas dépasser la profondeur max
+    # Ensure not exceeding max depth
     start_idx <- min(ind_cst_temp + 1, max_depth)
     light_corrected_non_log[start_idx:max_depth, ii_temp] <- NA
     last_non_NaN_temp <- ind_cst_temp - 1
   }
 
-  h_temp <- 1 # Par défaut : signal considéré non normal (cad pas dark)
+  h_temp <- 1 # By default: signal considered not normal (i.e., not dark)
 
   if ((last_non_NaN_temp - first_non_NaN_temp + 1) < 4) {
-    # Pas assez de points pour un test valide
+    # Not enough points for a valid test
     ind_dark_temp <- last_non_NaN_temp + 1
     PDARK_temp <- NA
     VDARK_temp <- NA
@@ -301,15 +279,15 @@ for (ii_temp in valid_cols) {
   } else {
     for (jj_temp in first_non_NaN_temp:(last_non_NaN_temp - 3)) {
 
-      # Sous-échantillon du profil lumière pour test de normalité
+      # Sub-sample of the light profile for normality test
       light_segment <- light_corrected_non_log[jj_temp:last_non_NaN_temp, ii_temp]
       light_segment <- light_segment[!is.na(light_segment)]
 
-      # Test de normalité (Lilliefors ~ lillie.test dans package 'nortest')
+      # Normality test (Lilliefors ~ lillie.test in package 'nortest')
       if (length(light_segment) >= 4) {
         test_result <- tryCatch(lillie.test(light_segment), error = function(e) NULL)
 
-        # Le segment suit une distribution normale : considéré sombre
+        # Segment follows normal distribution: considered dark
         if (!is.null(test_result) && test_result$p.value > 0.01) {
           h_temp <- 0  
           break
@@ -317,26 +295,26 @@ for (ii_temp in valid_cols) {
       }
     }
 
-    # Déterminer l'indice et la profondeur associée au signal sombre
+    # Determine index and depth associated with dark signal
     if (h_temp == 1) {
-      # Aucun test de normalité valide → prendre la dernière valeur
+      # No valid normality test → take the last value
       ind_dark_temp <- last_non_NaN_temp
       PDARK_temp <- pres_vec[ind_dark_temp]
-      # VDARK_temp reste à 0 (déjà initialisé)
+      # VDARK_temp remains 0 (already initialized)
     } else {
-      # Normalité détectée : on garde l'indice de cassure
+      # Normality detected: keep break index
       ind_dark_temp <- jj_temp
       PDARK_temp <- pres_vec[ind_dark_temp]
       VDARK_temp <- median(light_corrected_non_log[ind_dark_temp:last_non_NaN_temp, ii_temp], na.rm = TRUE)
     }
 
-    topdark_temp <- floor(pres_vec[ind_dark_temp]) ;
-    botdark_temp <- floor(pres_vec[last_non_NaN_temp]) + 1 ;
+    topdark_temp <- floor(pres_vec[ind_dark_temp])
+    botdark_temp <- floor(pres_vec[last_non_NaN_temp]) + 1
 
-    # Calcul de la pente d'atténuation totale
+    # Compute total attenuation slope
     slop_temp <- (light_log[ind_dark_temp, ii_temp] - light_log[first_non_NaN_temp, ii_temp]) / (pres_vec[ind_dark_temp] - pres_vec[first_non_NaN_temp])
 
-    # Calcul de la pente partielle sur un intervalle d'intégration (150 = minimum lower boundary (bottom) required for profiles to be imported in linear functional model)
+    # Compute partial slope over integration interval (150 = minimum bottom boundary for profiles in linear functional model)
     if (ind_dark_temp > 150) {
       slopPART_temp <- (light_log[150, ii_temp] - light_log[first_non_NaN_temp, ii_temp]) / (pres_vec[min_botIntegBound] - pres_vec[first_non_NaN_temp])
     } else {
@@ -344,23 +322,23 @@ for (ii_temp in valid_cols) {
     }
   }
 
-  # Correction du profil LIGHT
+  # LIGHT profile correction
 
-  # Indices à mettre à NaN (zones non fiables)
+  # Indices to set to NA (unreliable regions)
   toNaN_temp <- unique(c(1:max(1, first_non_NaN_temp - 1), seq(min(ind_dark_temp + 1, MAX_CHLA_DEPTH, last_non_NaN_temp + 1), length(light_corrected_non_log[, ii_temp]))))
 
-  # Suppression du signal sombre si détecté (h_temp = 0)
+  # Remove dark signal if detected (h_temp = 0)
   if (h_temp == 0) {
     light_corrected_non_log[ind_dark_temp:nrow(light_corrected_non_log), ii_temp] <- NA
   }
 
-  # Soustraction de la valeur sombre (dark value)
+  # Subtract dark value
   light_corrected_non_log[, ii_temp] <- light_corrected_non_log[, ii_temp] - VDARK_temp
 
-  # Remplacement des valeurs négatives par NaN
+  # Replace negative values with NA
   light_corrected_non_log[light_corrected_non_log[, ii_temp] <= 0, ii_temp] <- NA
 
-  # Interpolation linéaire si au moins 2 valeurs valides
+  # Linear interpolation if at least 2 valid values
   n_values_temp <- sum(!is.na(light_corrected_non_log[, ii_temp]))
   if (n_values_temp >= 2) {
     vect_temp <- light_corrected_non_log[first_non_NaN_temp:last_non_NaN_temp, ii_temp]
@@ -369,42 +347,26 @@ for (ii_temp in valid_cols) {
     light_corrected_non_log[toNaN_temp, ii_temp] <- NA
   }
 }
-light_corrected_log <- log(pmax(light_corrected_non_log, 1e-10));
+
+# Convert corrected light profile to log scale
+light_corrected_log <- log(pmax(light_corrected_non_log, 1e-10))
 
 ```
 
 ### Quenching depth, based on PAR15
 ```{r Quenching depth}
-# Calcule la profondeur où le seuil d'extinction (quenching) de 15 µmol.m⁻².s⁻¹ est atteint (Xing et al. (2018))
+# Calculate the depth where the quenching threshold (15 µmol·m⁻²·s⁻¹) is reached (Xing et al., 2018)
 quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
-  # Pour chaque profil vertical de lumière, on cherche la dernière profondeur où la valeur de lumière est supérieure à 15.
-  idx <- tail(which(col > 15), 1) # tail = profondeur la plus grande
-  # Si aucune valeur n'est supérieure à 15, on retourne NA, Sinon, l'indice comme profondeur seuil
+  # For each vertical light profile, find the deepest depth where the light value is above 15
+  idx <- tail(which(col > 15), 1) # tail = deepest depth
+  # If no value exceeds 15, return NA; otherwise, return the index as threshold depth
   if (length(idx) == 0) return(NA) else return(idx)                
 })
-
-```
-#### Plotting Quenching depth
-```{r}
-# 
-# df_quench <- data.frame(
-#   profile = seq_along(quenchDepth_vec),
-#   value = quenchDepth_vec
-# )
-# 
-# ggplot(df_quench, aes(x = profile, y = value)) +
-#   geom_point(shape = 4, color = "black") +
-#   geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "darkgreen", linewidth = 0.25, se = FALSE) +
-#   scale_y_reverse() +
-#   labs(x = "Profile", y = "Depth (m)", title = paste0("Quenching Depth - ", SEAL_NAME)) +
-#   theme_minimal()
 
 ```
 
 #### Plotting one light profile, before and after dark value correction
 ```{r LightProfilePlot}
-# Plot
-
 # valid_indices <- !is.na(light_non_log[, idprofile]) | !is.na(light_corrected_non_log[, idprofile])
 # xlim_vals <- range(c(light_non_log[, idprofile], light_corrected_non_log[, idprofile]), na.rm = TRUE)
 # ylim_vals <- range(pres_vec[valid_indices], na.rm = TRUE)
@@ -426,8 +388,6 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 
 #### Plotting all light profiles, before and after dark value correction
 ```{r PlotAllProfiles-original&Corrected}
-# # Plot
-# 
 # matplot(raw_light[1:MAX_CHLA_DEPTH,], pres_vec[1:MAX_CHLA_DEPTH],
 #         type = "l",
 #         ylim = rev(c(0, MAX_CHLA_DEPTH)),
@@ -450,7 +410,6 @@ quenchDepth_vec <- apply(light_corrected_non_log, 2, function(col) {
 ```
 ## Saving light profiles 
 ```{r SaveAndClassifyLightProfiles, results = 'hide'}
-# # Dossiers de sortie
 # dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME, "light")
 # dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
 # 
@@ -529,36 +488,40 @@ cat("Number of only N/A columns :", sum(col_na_only), "\n\n")
 
 ## Dark-value correction for Chl-a profiles
 ```{r DarkValue_chla}
-# Variables d'entrée
+# Input variables
 max_depth <- nrow(raw_chla)
 PDARK_temp <- MAX_CHLA_DEPTH + 1
 delta_for_cstCHLA <- 0.01
 darkDepthDelta_temp <- 10
-maxCHLA_depth <- 175
-# Extraction des 10 dernieres profondeurs de la matrice CHLA
+
+# Extract the last 10 depths from the CHLA matrix
 chlaDeep_temp <- raw_chla[(MAX_CHLA_DEPTH - (darkDepthDelta_temp - 1)) : MAX_CHLA_DEPTH, ]
-# Médiane par colonne (profil)
+
+# Median per column (profile)
 chlaProfDarkVal_temp <- apply(chlaDeep_temp, 2, median, na.rm = TRUE)
-# Remplir les NA avec la valeur la plus proche (cette ligne n'est pas égale à celle de matlab, à surveiller)
+
+# Fill NAs with the nearest value (note: this line is not identical to Matlab version, watch for differences)
 chlaProfDarkVal_temp <- na.approx(chlaProfDarkVal_temp, method = "constant", rule = 2)
 chlaProfDarkVal_temp <- round(chlaProfDarkVal_temp, 4) 
-# Générer l'offset en répétant la valeur médiane max_depth fois
+
+# Generate the offset by repeating the median value max_depth times
 chlaOffset_temp <- matrix(rep(chlaProfDarkVal_temp, times = max_depth), nrow = max_depth, byrow = TRUE)
 
 darkValProfile <- chlaProfDarkVal_temp
 
+# Subtract dark offset from raw CHLA
 CHLA_nadRegDk <- raw_chla
 CHLA_nadRegDk <- CHLA_nadRegDk - chlaOffset_temp
 CHLA_nadRegDk[CHLA_nadRegDk < 0] <- 0
 CHLA_nadRegDk <- round(CHLA_nadRegDk, 4)
 
-# Profils de chla sans colonne completement NA
-chla_non_nan <- CHLA_nadRegDk [, !col_na_only]
+# CHLA profiles without columns that are completely NA
+chla_non_nan <- CHLA_nadRegDk[, !col_na_only]
 n_profile <- ncol(chla_non_nan)
 
 for (ii in 1:n_profile) {
   profile_data <- chla_non_nan[, ii]
-  # Bornes du profil
+  # Profile bounds
   firstNonNan_temp <- which(!is.na(profile_data))[1]
   lastNonNan_temp <- tail(which(!is.na(profile_data)), 1)
   
@@ -574,14 +537,15 @@ for (ii in 1:n_profile) {
     if (jj != lastNonNan_temp - 1) {
       ind_dark_temp <- jj + 1
       PDARK_temp <- pres_vec[ind_dark_temp]
-      # si la colonne contient *autre chose que des NA*
+      # If the column contains any values other than NA
       if (!all(is.na(CHLA_nadRegDk[, ii]))) {
         CHLA_nadRegDk[ind_dark_temp:lastNonNan_temp, ii] <- 0
       }
     }
   }
 }
-# Résultats finaux
+
+# Final corrected CHLA profiles
 chla_corrected_dk <- CHLA_nadRegDk
 
 ```
@@ -634,40 +598,41 @@ chla_corrected_dk <- CHLA_nadRegDk
 ```{r NPQ_correction}
 # Xing et al. (2018): 2.1.3 NPQ correction methods based on MLD and light-threshold depth 
 
-CHLA_nadRegDkNpq <- chla_corrected_dk # dk : dark value corrigée
+CHLA_nadRegDkNpq <- chla_corrected_dk # dk: dark value corrected
 
-# Calcul de la profondeur de correction : min(MLD, quenchDepth)
+# Compute correction depth: min(MLD, quenchDepth)
 correction_depth <- ifelse(is.na(mld_vec), quenchDepth_vec,
                          ifelse(is.na(quenchDepth_vec), mld_vec,
                                 pmin(mld_vec, quenchDepth_vec)))
 
-# Profils valides pour la CHLA : au moins une valeur non-NA par colonne
+# Valid CHLA profiles: at least one non-NA value per column
 idx_chlaNonNan <- colSums(!is.na(raw_chla)) > 0
-# Profils valides pour la lumière 
+# Valid light profiles
 idx_lightNonNan <- colSums(!is.na(raw_light)) > 0
 
-# Boucle sur les indices valides de CHLA et lumière non-NaN
+# Loop over valid CHLA and light indices (non-NA)
 for (ii in which(idx_chlaNonNan & idx_lightNonNan)) { 
 
-  # Trouver le premier indice correspondant à min(MLD,QD)
+  # Find first index corresponding to min(MLD, QD)
   indCorrection <- which(pres_vec >= correction_depth[ii])[1]
 
   if (!is.na(indCorrection)) {
-    # Chercher la valeur maximale de CHLA dans l'intervalle surface -> correction_depth
+    # Find the maximum CHLA value in the interval surface -> correction_depth
     temp_vec <- chla_corrected_dk[1:indCorrection, ii]
     ind_maxChla <- which.max(temp_vec)
     max_chla <- temp_vec[ind_maxChla]
     
-    # Corriger la CHLA : écraser les valeurs de la surface jusqu'à ind_maxChla avec la valeur max
+    # Correct CHLA: overwrite values from surface to ind_maxChla with max value
     CHLA_nadRegDkNpq[1:ind_maxChla, ii] <- max_chla
 
-    # Mettre à jour la profondeur de correction si un indice a été trouvé
+    # Update correction depth if an index was found
     if (!is.na(ind_maxChla)) {
       correction_depth[ii] <- ind_maxChla
     }
   }
 }
 
+# Final CHLA profiles after NPQ correction
 chla_corrected_q <- CHLA_nadRegDkNpq
 
 ```
@@ -690,29 +655,6 @@ chla_corrected_q <- CHLA_nadRegDkNpq
 # sumNan <- colSums(light_corrected_non_log, na.rm = TRUE)
 # flags[sumNan == 0] <- "No Light data"
 # # 0 : OK
-```
-
-### Max Chla depth
-```{r}
-
-# max_inds <- sapply(1:ncol(chla_corrected_q), function(i) {
-#   col_data <- chla_corrected_q[, i]
-#   if(all(is.na(col_data))) return(NA_integer_) else return(which.max(col_data))
-# })
-# 
-# df_max <- data.frame(
-#   profile = seq_along(max_inds),
-#   value = max_inds
-# )
-# df_max <- df_max[!is.na(df_max$value), ]
-# 
-# ggplot(df_max, aes(x = profile, y = value)) +
-#   geom_point(shape = 4, color = "black") +
-#   geom_smooth(aes(y = value), method = "loess", formula = "y ~ x", color = "darkgreen", linewidth = 0.25, se = FALSE) +
-#   scale_y_reverse() +
-#   labs(x = "Profile", y = "Depth (m)", title = paste0("Max Chla depth - ", SEAL_NAME)) +
-#   theme_minimal()
-
 ```
 
 #### Plotting NPQ correction for Chl-a
@@ -745,7 +687,6 @@ chla_corrected_q <- CHLA_nadRegDkNpq
 ```
 ### Saving Chl-a profiles (Original / Dark value / NPQ)
 ```{r SaveAndClassifyChlaProfilesFinal, results = 'hide'}
-# # Dossiers de sortie
 # dir_plot = file.path("oceanographic_data_corrected", DEPLOY_FOLDER, SEAL_NAME,"chla_dk_npq")
 # dir.create(dir_plot, showWarnings = FALSE, recursive = TRUE)
 # 
@@ -812,208 +753,204 @@ chla_corrected_q <- CHLA_nadRegDkNpq
 ```
 
 # MAPS
-## Loading bathymetry
+## Bathymetry
 ```{r Bathy}
+min_lon <- 136
+max_lon <- 146
+min_lat <- -67.3
+max_lat <- -65.4
+
+library(raster)
+
+crop <- c(min_lon, max_lon, min_lat, max_lat)
+ext_crop <- extent(crop)
+
 large_topo <- raster(BATHY_PATH_LARGE)
-large_topo[large_topo >=0] <-NA
 large_topo_spat <- terra::rast(large_topo)
 
-large_topo_spat <- crop(large_topo_spat, extent(136, 146, -67.3, -65.4))
+large_topo_spat_crop <- crop(large_topo_spat, ext_crop)
+
+large_topo_spat_crop[large_topo_spat_crop >=0] <-NA
 ```
 
-## Loading and cropping fast ice raster
+## Fast ice raster
 ```{r Fast_ice}
+library(raster)
+library(terra)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(zoo)
+
 prj <- "+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
 ex <- c(-2691055, 2933945, -2390156, 2309844)
-library(raster) 
-library(terra)
-library(lubridate)
 
 r <- rast(FAST_ICE_PATH, "Fast_Ice_Time_Series")
-set.ext(r, ext(ex))
-set.crs(r, crs(prj))
-#plot(r)
+ext(r) <- ext(ex)
+crs(r) <- prj
+# plot(r)
 
-# Define the latitude and longitude bounds--------------------------------------
-prj="+proj=stere +lat_0=-90 +lat_ts=-70 +datum=WGS84"
+# define the time needed
+# raster_time <- time(r)
+# date_min <- as.Date(min(dateTime, na.rm = TRUE))
+# date_max <- as.Date(max(dateTime, na.rm = TRUE))
+```
 
-lon_min <- 136
-lon_max <- 146 #150
-lat_min <- -67.3
-lat_max <- -65.4
+```{r}
+raster_range <- c(1,2,3,4,5,6,7,8) # Lines to modify to change the SealOfApproval deployment
 
-points <- cbind(
-  lon = c(lon_min, lon_max),  # Example longitudes
-  lat = c(lat_min,lat_max)   # Example latitudes
-)
+crop_bounds <- c(130, 150, -67.5, -65)
+pts <- cbind(lon = crop_bounds[c(1,2)], lat = crop_bounds[c(3,4)])
+prj_pts <- project(pts, to = prj, from = "EPSG:4326")
+ex_crop <- ext(prj_pts[2,1], prj_pts[1,1], prj_pts[2,2], prj_pts[1,2])
 
-prjpoints <- project(points, to = prj, from = "EPSG:4326")
-new_ex<-extent(prjpoints[2,1],prjpoints[1,1],prjpoints[2,2],prjpoints[1,2])
-new_r=crop(r,new_ex)
-#plot(new_r)
-
-#define the time needed---------------------------------------------------------
-raster_time <- time(r)
-date_min <- min(dateTime, na.rm = TRUE)
-date_max <- max(dateTime, na.rm = TRUE)
-
-raster_start <- raster_time
-raster_end <- lead(raster_time) - 1  # fin = début du suivant - 1 jour
-
-raster_end[length(raster_end)] <- raster_start[length(raster_end)] + months(1) - 1
-raster_range <- which(raster_start <= date_max & raster_end >= date_min)
-raster_time[raster_range]
+new_r <- crop(r, ex_crop)
+# plot(new_r)
 
 x_sub <- subset(new_r, raster_range)
-plot(x_sub)
+# plot(x_sub)
 
 #description: Classified surface type: 0 = pack ice or ocean; 1 = continent; 2 = islands; 3 = ice shelf; 4 = fast ice; 5 = manual fast ice edge; 6 = auto fast ice edge.
-x_sub_p=x_sub
-x_sub_p[x_sub_p == 0 | x_sub_p == 2 | x_sub_p == 3 | x_sub_p == 5| x_sub_p == 6] <- NA
-x_sub_p[x_sub_p == 4] <- 100
+x_sub_clean <- classify(x_sub, cbind(from = c(0, 2, 5, 6), to = NA))
+# persistence
+# n <- length(raster_range)
+# x_sub_p <- classify(x_sub, cbind(from = c(0, 1, 2, 3, 5, 6), to = NA))
+# x_sub_p[x_sub_p == 4] <- 100
+# persistence <- sum(x_sub_p, na.rm=TRUE)/n
 
-x_sub2= project(x_sub, crs(large_topo_spat),
-                res = res(large_topo_spat))
+# projection ...
+x_sub_proj <- project(x_sub_clean, crs(large_topo_spat), res = res(large_topo_spat))
+# plot(x_sub_proj)
 
-names(x_sub2) <- raster_time[raster_range]
+# ... and cropping (dans ce sens là)
+x_sub_proj <- crop(x_sub_proj, extent(min_lon, max_lon, min_lat, max_lat))
+# plot(x_sub_proj)
 
-x_sub2_df <- as.data.frame(x_sub2, xy = TRUE)
+# Assign layer names using the actual dates
+raster_time <- time(r)[raster_range]
+names(x_sub_proj) <- as.character(raster_time)
 
-library(tidyr)
+```
 
-x_sub2_long <- pivot_longer(x_sub2_df, cols = starts_with(AMSR_FOLDER_YEAR), names_to = "date_simple", values_to = "value")%>%
+### Fast-ice to dataframe
+```{r}
+# Convert to long data.frame
+x_sub2_df <- as.data.frame(x_sub_proj, xy = TRUE)
+x_sub2_long <- pivot_longer(
+  x_sub2_df,
+  cols = -c(x, y),
+  names_to = "date_simple",
+  values_to = "value"
+) %>%
   mutate(
-    month_date = ymd(date_simple),
-    month_label = format(month_date, "%Y - %B")
-  )
+    month_date = date_simple %>% ymd() %>% + days(5),
+    month_label = format(month_date, "%Y - %B"),
+    type = factor(month_label, levels = unique(month_label))
+  ) %>%
+  filter(!is.na(value))  # remove NAs
 
-crop <- c(136, 146, -67.3, -65.4)
-# Crop dataset fast-ice ice shelf continent
-x_sub2_long_crop <- x_sub2_long %>%
-  dplyr::filter(x >= crop[1], x <= crop[2],
-                y >= crop[3], y <= crop[4])
+# Create a new column with descriptive labels
+x_sub2_long$surface_type <- factor(x_sub2_long$value,
+                                  levels = c(1, 3, 4),
+                                  labels = c("continent", "ice_shelf", "fast_ice"))
+
 ```
 
 ## Mean/sd/median SIC raster map
 ```{r}
 library(raster)
+library(terra)
 library(stringr)
 library(lubridate)
+library(dplyr)
+library(purrr)
+library(tidyr)
 
+# Parameters
 wgs <- "+proj=longlat +ellps=WGS84"
 amsr_files <- list.files(AMSR_FOLDER_PATH, full.names = TRUE)
+# Lines to modify to change the SealOfApproval deployment
+target_year_months <- c("202302", "202303", "202304", "202305", "202306", "202307", "202308", "202309") 
 
-target_year_months <- c("202302", "202303", "202304", "202305", "202306", "202307", "202308", "202309") #format(raster_time[raster_range], "%Y%m")
+crop_bounds <- c(130, 150, -67.5, -65)
 
-# Lire plusieurs rasters, les nettoyer et les reprojeter
-list_SIC <- lapply(target_year_months, function(m) {
-  
+# Read a raster to get its CRS
+r_test <- raster(amsr_files[1])
+crs_native <- projection(r_test)
+
+# Convert WGS84 coordinates to raster native CRS
+pts <- cbind(lon = crop_bounds[c(1,2)], lat = crop_bounds[c(3,4)])
+pts_sp <- sp::SpatialPoints(pts, proj4string = CRS(wgs))
+pts_prj <- sp::spTransform(pts_sp, CRS(crs_native))
+prj_coords <- coordinates(pts_prj)
+
+# Define extent for initial crop in native CRS
+ex_crop <- extent(min(prj_coords[,1]), max(prj_coords[,1]),
+                  min(prj_coords[,2]), max(prj_coords[,2]))
+
+df_SIC <- list()  # Will store data.frames for each month
+
+for (m in target_year_months) {
   selected_files <- amsr_files[str_detect(amsr_files, paste0("s3125-", m))]
-  if (length(selected_files) == 0) return(NULL)
-  
+  if (length(selected_files) == 0) next
+
   rasters <- lapply(selected_files, function(f) {
     r <- raster(f)
     r <- setValues(raster(r), values(r))
-    
-    boxext <- extent(projectExtent(raster(extent(c(130,144,-67,-65)), crs = wgs), projection(r)))
-    r_cropped <- crop(r, boxext)
+    crop_r <- crop(r, ex_crop)
+    r_proj <- projectRaster(crop_r, crs = wgs)
+    final_crop <- extent(min_lon, max_lon, min_lat, max_lat)
+    r_cropped <- crop(r_proj, final_crop)
     r_cropped[r_cropped > 100] <- NA_real_
-    
-    projectRaster(r_cropped, crs = wgs)
+    r_cropped
   })
-  
+
   r_stack <- stack(rasters)
-  
-  # Stats
-  mean_r <- calc(r_stack, mean, na.rm = TRUE)
+
+  mean_r   <- calc(r_stack, mean,   na.rm = TRUE)
   median_r <- calc(r_stack, median, na.rm = TRUE)
-  sd_r <- calc(r_stack, sd, na.rm = TRUE)
-  
-  # Création de la date et du nom lisible
-  date_obj <- as.Date(paste0(m, "01"), format = "%Y%m%d")
-  formatted_date <- format(date_obj, "%Y - %B")
-  
-  list(
-    date = m,
-    month_label = formatted_date,
-    mean = mean_r,
-    median = median_r,
-    sd = sd_r
-  )
-})
+  sd_r     <- calc(r_stack, sd,     na.rm = TRUE)
 
-```
-### SIC to dataframe
-```{r}
-library(dplyr)
-library(tidyr)
-library(purrr)
+  # Combine all statistics into a single stack
+  all_stats <- stack(mean_r, median_r, sd_r)
+  names(all_stats) <- c("mean", "median", "sd")
 
-list_SIC[[1]]$mean[is.na(list_SIC[[1]]$mean[])] <- 0
-list_SIC[[1]]$median[is.na(list_SIC[[1]]$median[])] <- 0
-list_SIC[[1]]$sd[is.na(list_SIC[[1]]$sd[])] <- 0
+  # Convert to long data.frame
+  df_month <- as.data.frame(all_stats, xy = TRUE) %>%
+    pivot_longer(
+      cols = c(mean, median, sd),
+      names_to = "stat",
+      values_to = "value"
+    ) %>%
+    mutate(month_label = format(as.Date(paste0(m, "01"), "%Y%m%d"), "%Y - %B"))
 
-# Fonction pour convertir un raster en dataframe
-raster_to_df <- function(r, month_label, date, stat_name) {
-  df <- as.data.frame(r, xy = TRUE)
-  names(df)[3] <- stat_name
-  df <- df %>% filter(!is.na(.data[[stat_name]]), !is.nan(.data[[stat_name]]))
-  df$month_label <- month_label
-  df$date <- date
-  return(df)
+  df_SIC[[m]] <- df_month
 }
 
-# Extraire et fusionner les données
-list_dfs <- lapply(list_SIC, function(entry) {
-  if (is.null(entry)) return(NULL)
-  
-  mean_df <- raster_to_df(entry$mean, entry$month_label, entry$date, "mean")
-  median_df <- raster_to_df(entry$median, entry$month_label, entry$date, "median")
-  sd_df <- raster_to_df(entry$sd, entry$month_label, entry$date, "sd")
-  
-  if (nrow(mean_df) == 0 || nrow(median_df) == 0 || nrow(sd_df) == 0) return(NULL)
-
-  # Trouver les coordonnées communes à tous les 3
-  common_coords <- reduce(list(mean_df, median_df, sd_df), ~ inner_join(.x, .y, by = c("x", "y"))) %>%
-    dplyr::select(x, y)
-
-  # Filtrer chaque df pour ne garder que les coordonnées communes
-  mean_df_filt <- semi_join(mean_df, common_coords, by = c("x", "y"))
-  median_df_filt <- semi_join(median_df, common_coords, by = c("x", "y"))
-  sd_df_filt <- semi_join(sd_df, common_coords, by = c("x", "y"))
-
-  # Fusionner
-  df_month <- mean_df_filt %>%
-    left_join(median_df_filt, by = c("x", "y", "month_label", "date")) %>%
-    left_join(sd_df_filt, by = c("x", "y", "month_label", "date"))
-
-  return(df_month)
-})
-
-# Supprimer les NULL éventuels
-#list_dfs <- Filter(Negate(is.null), list_dfs)
-
-# Fusionner tous les mois dans un seul data.frame
-df_SIC <- bind_rows(list_dfs)
+# Final dataframe
+df_SIC <- bind_rows(df_SIC) %>%
+  pivot_wider(
+    names_from = stat,
+    values_from = value
+  )
 ```
 
 # RDS Export
 ```{r}
-
-# Nombre de profondeurs et de profils
+# Number of depths and profiles
 n_depths <- nrow(raw_light[1:MAX_DEPTH,])
 n_profiles <- ncol(raw_light[1:MAX_DEPTH,])
 
-# Transposer les matrices pour avoir 1 ligne par profil
-df_light_raw       <- as.data.frame(t(raw_light[1:MAX_DEPTH,])) # n_profils x 250 transposé
+# Transpose matrices to have 1 row per profile
+df_light_raw       <- as.data.frame(t(raw_light[1:MAX_DEPTH,])) 
 df_light_corrected <- as.data.frame(t(light_corrected_log[1:MAX_DEPTH,]))
 df_chla_raw        <- as.data.frame(t(raw_chla[1:MAX_DEPTH,]))
 df_chla_corrected  <- as.data.frame(t(chla_corrected_q[1:MAX_DEPTH,]))
 df_temperature     <- as.data.frame(t(temperature[1:MAX_DEPTH,]))
 df_salinity        <- as.data.frame(t(sal[1:MAX_DEPTH,]))
 
-# Ajouter noms clairs pour les colonnes (chaque colonne = une profondeur)
-depth_names <- paste0("d", seq_len(n_depths))  # d1, d2, ..., d1000
+# Add clear column names (each column = one depth)
+depth_names <- paste0("d", seq_len(n_depths))  # d1, d2, ..., dN
 colnames(df_light_raw)       <- depth_names
 colnames(df_light_corrected) <- depth_names
 colnames(df_chla_raw)        <- depth_names
@@ -1021,7 +958,7 @@ colnames(df_chla_corrected)  <- depth_names
 colnames(df_temperature)     <- depth_names
 colnames(df_salinity)        <- depth_names
 
-# Ajouter colonne SEAL_NAME
+# Add SEAL_NAME column
 df_light_raw$seal_id       <- SEAL_NAME
 df_light_corrected$seal_id <- SEAL_NAME
 df_chla_raw$seal_id        <- SEAL_NAME
@@ -1029,7 +966,7 @@ df_chla_corrected$seal_id  <- SEAL_NAME
 df_temperature$seal_id     <- SEAL_NAME
 df_salinity$seal_id        <- SEAL_NAME
 
-# Ajouter info profil
+# Add profile ID info
 df_light_raw$profile_id       <- 1:n_profiles
 df_light_corrected$profile_id <- 1:n_profiles
 df_chla_raw$profile_id        <- 1:n_profiles
@@ -1037,28 +974,28 @@ df_chla_corrected$profile_id  <- 1:n_profiles
 df_temperature$profile_id     <- 1:n_profiles
 df_salinity$profile_id        <- 1:n_profiles
 
-# Convertir dateTime en POSIXct pour le melt
+# Convert dateTime to POSIXct for melting
 dateTime <- as.POSIXct(dateTime)
 
-# Ajouter date, lon, lat
+# Add date, longitude, latitude
 df_light_raw$date <- dateTime
 df_light_raw$lon <- lon
 df_light_raw$lat <- lat
 
-# Fusionner tous les jeux de données par profile_id
+# Merge all datasets by profile_id
 df_all <- merge(df_light_raw, df_light_corrected, by = "profile_id", suffixes = c("_raw", "_corr"))
 df_all <- merge(df_all, df_chla_raw, by = "profile_id")
 df_all <- merge(df_all, df_chla_corrected, by = "profile_id", suffixes = c("_chla_raw", "_chla_corr"))
 
-# Ajouter de nouveau date, lon, lat
+# Add date, longitude, latitude again
 df_all$date <- df_light_raw$date
 df_all$lon <- df_light_raw$lon
 df_all$lat <- df_light_raw$lat
 
-# Passer au format long : 1 ligne = 1 profondeur x 1 profil
+# Convert to long format: 1 row = 1 depth × 1 profile
 library(reshape2)
 
-# Long pour les lumières
+# Long format for light
 light_raw_long <- melt(df_light_raw,
                        id.vars = c("seal_id", "profile_id", "date", "lon", "lat"),
                        variable.name = "depth_index",
@@ -1089,30 +1026,31 @@ sal_long <- melt(df_salinity,
                   variable.name = "depth_index",
                   value.name = "salinity")
 
+# Merge all long-format data.frames
 df_final <- Reduce(function(x, y) merge(x, y, by = c("seal_id", "profile_id", "depth_index")),
                    list(light_raw_long, light_corr_long, chla_raw_long, chla_corr_long, temp_long, sal_long))
 
-# Ajouter profondeur réelle (obligé d'avoir une version numerique, sinon la profondeur se trie par ordre alphabetique dans le rds)
+# Add real depth (numeric version needed, otherwise depths sort alphabetically in RDS)
 pres_vec <- pres_vec[1:MAX_DEPTH]
 df_final$depth <- pres_vec[as.integer(gsub("d", "", df_final$depth_index))]
 df_final$depth_num <- as.integer(gsub("d", "", df_final$depth_index))
 df_final <- df_final[order(df_final$profile_id, df_final$depth_num), ]
 df_final$depth <- pres_vec[df_final$depth_num]
 
-# Réorganiser colonnes
+# Reorganize columns
 df_final <- df_final[, c("seal_id", "profile_id", "date", "lon", "lat", "depth", 
                          "light_raw", "light_corrected", 
                          "chla_raw", "chla_corrected",
                          "temperature", "salinity")]
 
-# Ajout MLD et QD (1 valeur par profil)
+# Add MLD and QD (1 value per profile)
 df_profile_info <- data.frame(
   profile_id = 1:n_profiles,
   MLD = mld_vec,
   QD = quenchDepth_vec
 )
 
-# Merge avec df_final (en format long)
+# Merge with df_final (long format)
 df_final <- merge(df_final, df_profile_info, by = "profile_id")
 
 df_final$date_simple <- format(df_final$date, "%Y-%m-%d")
@@ -1120,36 +1058,36 @@ df_final$date_simple <- format(df_final$date, "%Y-%m-%d")
 cols_to_check <- c("light_raw", "light_corrected", 
                    "chla_raw", "chla_corrected",
                    "temperature", "salinity")
-# Supprimer les lignes où les valeurs de cols_to_check sont nulles
+# Remove rows where all cols_to_check are NA
 df_final <- df_final[!rowSums(is.na(df_final[, cols_to_check])) == length(cols_to_check), ]
 
 library(FNN)
 
 # Fast-ice
-# Extraire les coordonnées
+# Extract coordinates
 coords_final <- df_final[, c("lon", "lat")]
-coords_sub <- x_sub2_long_crop[, c("x", "y")]
+coords_sub <- x_sub2_long[, c("x", "y")]
 
-# get.knnx cherche le plus proche voisin dans df_sub pour chaque point de df_final
+# get.knnx finds nearest neighbor in df_sub for each point in df_final
 nn <- get.knnx(coords_sub, coords_final, k = 1)
 
-# Récupérer la valeur "fast_ice_idx" correspondante
-df_final$fast_ice_idx <- x_sub2_long_crop$value[nn$nn.index[, 1]]
+# Retrieve corresponding "fast_ice_idx" value
+df_final$fast_ice_idx <- x_sub2_long$value[nn$nn.index[, 1]]
 
-# SIC
-# Extraire coords pour df_final (profil)
+# SIC (Sea Ice Concentration)
+# Extract coordinates for df_final (profiles)
 coords_profiles <- df_final[, c("lon", "lat")]
 coords_SIC <- df_SIC[, c("x", "y")]
 
-# nearest neighbor spatial (1 plus proche)
+# Nearest neighbor spatial (1 nearest)
 nn_spatial <- get.knnx(coords_SIC, coords_profiles, k = 1)
 
-# Ajouter les colonnes SIC associées à df_final
+# Add SIC columns to df_final
 df_final$SIC_mean <- df_SIC$mean[nn_spatial$nn.index[, 1]]
 df_final$SIC_median <- df_SIC$median[nn_spatial$nn.index[, 1]]
 df_final$SIC_sd <- df_SIC$sd[nn_spatial$nn.index[, 1]]
 
-# Exporter en .rds (Difference avec le RData = RData plusieurs objets, rds 1 seul objet)
+# Export to .rds (difference with RData: RData stores multiple objects, RDS stores 1 object)
 saveRDS(df_final, file = paste0(RSD_PATH, "_data.rds"))
 
 ```
